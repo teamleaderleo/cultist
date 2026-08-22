@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "source": "github_connector_open_pr_snapshot",
+  "observed_at": "2026-08-22T19:11:08Z",
+  "current": {
+    "id": "sable-648-single-head-cutover",
+    "kind": "planned_work",
+    "title": "Sable #648 single-head cutover and risk-execution persistence",
+    "url": "https://github.com/Coreys-Quarry/quarry/issues/648",
+    "head_ref": "planned/648-single-head-cutover",
+    "head_sha": "ff941a6704fa89e987adf170b2b7a30604b0438c",
+    "updated_at": "2026-08-22T19:11:08Z",
+    "draft": false,
+    "changed_paths": [
+      "src/quarry/_exact_risk_paper_contract.py",
+      "src/quarry/_exact_risk_paper_io.py",
+      "src/quarry/_exact_risk_paper_replay.py",
+      "src/quarry/_exact_risk_paper_store.py",
+      "src/quarry/exact_risk_paper.py",
+      "tests/test_exact_risk_paper_v2_cutover.py"
+    ]
+  },
+  "active_work": [
+    {
+      "id": "#705",
+      "kind": "pull_request",
+      "title": "research: profile exact evaluator internals",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/705",
+      "head_ref": "research/563-evaluator-internals-profile",
+      "head_sha": "b3b04390cee5b822b006b17ae8acc74a04d1a3f1",
+      "updated_at": "2026-08-22T19:11:08Z",
+      "draft": true,
+      "changed_paths": [
+        ".github/workflows/research-563-evaluator-internals-profile.yml",
+        "scripts/research_563_evaluator_internals_profile.py"
+      ]
+    },
+    {
+      "id": "#692",
+      "kind": "pull_request",
+      "title": "research: freeze #665 stock-selection v1 admission gate",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/692",
+      "head_ref": "research/665-stock-selection-v1",
+      "head_sha": "000be92e92aff2bea9c0b63542b27f2f0d269844",
+      "updated_at": "2026-08-22T18:48:05Z",
+      "draft": false,
+      "changed_paths": [
+        "docs/stock-selection-research.md",
+        "src/quarry/stock_selection_research.py",
+        "tests/test_stock_selection_research.py"
+      ]
+    },
+    {
+      "id": "#691",
+      "kind": "pull_request",
+      "title": "feat: add corporate event study and SEC filing baseline",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/691",
+      "head_ref": "research/659-corporate-event-study-v1",
+      "head_sha": "30946d26b4185b8564706f073637cf05ffb7aa3b",
+      "updated_at": "2026-08-22T19:08:06Z",
+      "draft": false,
+      "changed_paths": [
+        "research/programs/corporate-event-study-659-v1.json",
+        "research/results/corporate-event-study-659-v1-data-blocked.json",
+        "research/results/corporate-event-study-659-v1-sec-source-result.json",
+        "src/quarry/company_event_study.py",
+        "src/quarry/sec_edgar_filing.py",
+        "tests/test_company_event_study.py",
+        "tests/test_sec_edgar_filing.py"
+      ]
+    },
+    {
+      "id": "#689",
+      "kind": "pull_request",
+      "title": "research: admit frozen #645 BTC hourly source",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/689",
+      "head_ref": "agent/645-hourly-btc-campaign-20260823",
+      "head_sha": "a91e0133ee228f826c1b4a54ba6a05ee7e9dac6e",
+      "updated_at": "2026-08-22T18:49:56Z",
+      "draft": false,
+      "changed_paths": [
+        ".github/workflows/hourly-btc-source.yml",
+        "configs/research/hourly_btc_baselines_v1.json",
+        "src/quarry/hourly_source.py",
+        "tests/test_hourly_source.py"
+      ]
+    },
+    {
+      "id": "#686",
+      "kind": "pull_request",
+      "title": "research: add #663 deterministic news-cycle novelty baseline",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/686",
+      "head_ref": "codex/issue-663-news-cycle-novelty-baseline",
+      "head_sha": "9fbc5f81e111cb04a6c742cf2239162db412a607",
+      "updated_at": "2026-08-22T18:42:59Z",
+      "draft": false,
+      "changed_paths": [
+        "research/news_cycle/issue_663_inventory.json",
+        "src/quarry/news_cycle.py",
+        "tests/test_news_cycle.py"
+      ]
+    }
+  ],
+  "coordination_edges": []
+}
