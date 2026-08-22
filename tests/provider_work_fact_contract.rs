@@ -342,6 +342,35 @@ fn activity_change_changes_identity_without_merging_activity_semantics() {
 }
 
 #[test]
+fn changed_path_set_changes_identity() {
+    let first = baseline_work();
+    let mut second = baseline_work();
+    second[0].changed_paths = vec!["AGENTS.md", "src/new_collision_surface.rs"];
+
+    assert_ne!(
+        fingerprint(&first, &[]).unwrap(),
+        fingerprint(&second, &[]).unwrap()
+    );
+}
+
+#[test]
+fn work_membership_change_changes_identity() {
+    let first = baseline_work();
+    let mut second = baseline_work();
+    second.push(WorkInput {
+        id: "pull/627",
+        head_sha: "769ded20439efe0567d4553141598cfd3965a013",
+        activity: ActivityInput::ConfirmedActive,
+        changed_paths: vec!["tests/test_research_610_strict_carrier.py"],
+    });
+
+    assert_ne!(
+        fingerprint(&first, &[]).unwrap(),
+        fingerprint(&second, &[]).unwrap()
+    );
+}
+
+#[test]
 fn noncanonical_work_id_spellings_fail_closed() {
     for malformed in ["#604", "pull/0604", "pull/0", "PULL/604", "pull/604 "] {
         let mut work = baseline_work();
