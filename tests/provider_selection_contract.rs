@@ -110,7 +110,9 @@ fn canonical_symbol(value: &str, label: &str) -> Result<String, String> {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
     {
-        return Err(format!("{label} must be a non-empty canonical ASCII symbol"));
+        return Err(format!(
+            "{label} must be a non-empty canonical ASCII symbol"
+        ));
     }
     Ok(value.to_ascii_lowercase())
 }
@@ -129,8 +131,7 @@ fn canonical_host(value: &str) -> Result<String, String> {
 fn canonical_query_label(value: &str) -> Result<String, String> {
     if value.is_empty()
         || !value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric()
-                || matches!(byte, b'-' | b'_' | b'.' | b':' | b'+')
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':' | b'+')
         })
     {
         return Err("query identity must be a non-empty printable query token".to_string());
