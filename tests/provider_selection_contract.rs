@@ -29,6 +29,36 @@ enum TraversalModeInput {
     Bounded,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OrderFieldInput {
+    UpdatedAt,
+    CreatedAt,
+}
+
+impl OrderFieldInput {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::UpdatedAt => "updated_at",
+            Self::CreatedAt => "created_at",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OrderDirectionInput {
+    Asc,
+    Desc,
+}
+
+impl OrderDirectionInput {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Asc => "asc",
+            Self::Desc => "desc",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct SelectionInput<'a> {
     provider_kind: &'a str,
@@ -39,7 +69,8 @@ struct SelectionInput<'a> {
     draft_policy: DraftPolicyInput,
     traversal_mode: TraversalModeInput,
     page_size: u32,
-    order_by: &'a str,
+    order_field: OrderFieldInput,
+    order_direction: OrderDirectionInput,
 }
 
 #[derive(Debug, Serialize)]
@@ -58,7 +89,11 @@ struct SelectionDocument {
 #[serde(tag = "mode", rename_all = "snake_case")]
 enum CoverageIdentity {
     Exhaustive,
-    Bounded { limit: u32, order_by: String },
+    Bounded {
+        limit: u32,
+        order_field: String,
+        order_direction: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -69,13 +104,36 @@ struct OpaqueQueryDocument {
     query: String,
 }
 
-fn canonical_token(value: &str, label: &str) -> Result<String, String> {
+fn canonical_symbol(value: &str, label: &str) -> Result<String, String> {
+    if value.is_empty()
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err(format!("{label} must be a non-empty canonical ASCII symbol"));
+    }
+    Ok(value.to_ascii_lowercase())
+}
+
+fn canonical_host(value: &str) -> Result<String, String> {
+    if value.is_empty()
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.'))
+    {
+        return Err("provider instance must be a canonical host name".to_string());
+    }
+    Ok(value.to_ascii_lowercase())
+}
+
+fn canonical_query_label(value: &str) -> Result<String, String> {
     if value.is_empty()
         || !value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')
+            byte.is_ascii_alphanumeric()
+                || matches!(byte, b'-' | b'_' | b'.' | b':' | b'+')
         })
     {
-        return Err(format!("{label} must be a non-empty canonical ASCII token"));
+        return Err("query identity must be a non-empty printable query token".to_string());
     }
     Ok(value.to_ascii_lowercase())
 }
@@ -87,8 +145,8 @@ fn canonical_collection(value: &str) -> Result<String, String> {
     if repository.contains('/') {
         return Err("collection must contain exactly one `/` separator".to_string());
     }
-    let owner = canonical_token(owner, "collection owner")?;
-    let repository = canonical_token(repository, "collection repository")?;
+    let owner = canonical_symbol(owner, "collection owner")?;
+    let repository = canonical_symbol(repository, "collection repository")?;
     Ok(format!("{owner}/{repository}"))
 }
 
@@ -97,15 +155,14 @@ fn selection_document(input: &SelectionInput<'_>) -> Result<SelectionDocument, S
         return Err("page size must be positive".to_string());
     }
 
-    let provider_kind = canonical_token(input.provider_kind, "provider kind")?;
-    let provider_instance = canonical_token(input.provider_instance, "provider instance")?;
+    let provider_kind = canonical_symbol(input.provider_kind, "provider kind")?;
+    let provider_instance = canonical_host(input.provider_instance)?;
     let collection = canonical_collection(input.collection)?;
-    let work_kind = canonical_token(input.work_kind, "work kind")?;
-    let order_by = canonical_token(input.order_by, "order by")?;
+    let work_kind = canonical_symbol(input.work_kind, "work kind")?;
 
     let mut states = BTreeSet::new();
     for raw_state in &input.states {
-        let state = canonical_token(raw_state, "provider state")?;
+        let state = canonical_symbol(raw_state, "provider state")?;
         if !states.insert(state.clone()) {
             return Err(format!("duplicate provider state `{state}`"));
         }
@@ -118,7 +175,8 @@ fn selection_document(input: &SelectionInput<'_>) -> Result<SelectionDocument, S
         TraversalModeInput::Exhaustive => CoverageIdentity::Exhaustive,
         TraversalModeInput::Bounded => CoverageIdentity::Bounded {
             limit: input.page_size,
-            order_by,
+            order_field: input.order_field.as_str().to_string(),
+            order_direction: input.order_direction.as_str().to_string(),
         },
     };
 
@@ -150,10 +208,10 @@ fn selection_identity(input: &SelectionInput<'_>) -> Result<String, String> {
 
 fn opaque_query_identity(input: &SelectionInput<'_>, query: &str) -> Result<String, String> {
     digest(&OpaqueQueryDocument {
-        provider_kind: canonical_token(input.provider_kind, "provider kind")?,
-        provider_instance: canonical_token(input.provider_instance, "provider instance")?,
+        provider_kind: canonical_symbol(input.provider_kind, "provider kind")?,
+        provider_instance: canonical_host(input.provider_instance)?,
         collection: canonical_collection(input.collection)?,
-        query: canonical_token(query, "query identity")?,
+        query: canonical_query_label(query)?,
     })
 }
 
@@ -167,7 +225,8 @@ fn baseline() -> SelectionInput<'static> {
         draft_policy: DraftPolicyInput::Include,
         traversal_mode: TraversalModeInput::Exhaustive,
         page_size: 100,
-        order_by: "updated_at:desc",
+        order_field: OrderFieldInput::UpdatedAt,
+        order_direction: OrderDirectionInput::Desc,
     }
 }
 
@@ -178,8 +237,16 @@ fn opaque_query_label_can_collide_across_materially_different_admission_rules() 
     exclude_drafts.draft_policy = DraftPolicyInput::Exclude;
 
     assert_eq!(
-        opaque_query_identity(&include_drafts, "open_pull_requests:v1").unwrap(),
-        opaque_query_identity(&exclude_drafts, "open_pull_requests:v1").unwrap()
+        opaque_query_identity(
+            &include_drafts,
+            "open-pull-requests+explicit-preparation:v1"
+        )
+        .unwrap(),
+        opaque_query_identity(
+            &exclude_drafts,
+            "open-pull-requests+explicit-preparation:v1"
+        )
+        .unwrap()
     );
     assert_ne!(
         selection_identity(&include_drafts).unwrap(),
@@ -251,7 +318,8 @@ fn exhaustive_transport_order_and_page_size_do_not_change_selection_identity() {
     let first = baseline();
     let mut second = baseline();
     second.page_size = 50;
-    second.order_by = "created_at:asc";
+    second.order_field = OrderFieldInput::CreatedAt;
+    second.order_direction = OrderDirectionInput::Asc;
 
     assert_eq!(
         selection_identity(&first).unwrap(),
@@ -268,7 +336,8 @@ fn bounded_population_size_and_order_are_selection_relevant() {
     let mut different_limit = first.clone();
     different_limit.page_size = 100;
     let mut different_order = first.clone();
-    different_order.order_by = "created_at:asc";
+    different_order.order_field = OrderFieldInput::CreatedAt;
+    different_order.order_direction = OrderDirectionInput::Asc;
 
     assert_ne!(
         selection_identity(&first).unwrap(),
@@ -293,10 +362,14 @@ fn exhaustive_and_bounded_population_contracts_differ() {
 }
 
 #[test]
-fn malformed_collection_and_duplicate_states_fail_closed() {
+fn malformed_scope_and_duplicate_states_fail_closed() {
     let mut malformed_collection = baseline();
     malformed_collection.collection = "teamleaderleo/cultist/extra";
     assert!(selection_identity(&malformed_collection).is_err());
+
+    let mut malformed_host = baseline();
+    malformed_host.provider_instance = "https://github.com";
+    assert!(selection_identity(&malformed_host).is_err());
 
     let mut duplicate_states = baseline();
     duplicate_states.states = vec!["open", "OPEN"];
