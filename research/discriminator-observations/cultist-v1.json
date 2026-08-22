@@ -18,15 +18,15 @@
     {
       "observation_id": "history/oxc-edit-class-v1:current-edit-class",
       "discriminator_id": "edit_class",
-      "subject_ref": "oxc-project/oxc@8783524015b1e6ff1c39ccf426df0bb07cbbc588:crates/oxc_linter/src/rules.rs",
-      "source_receipt": "research:rust-syntax-cohort-replay.md",
+      "subject_ref": "oxc-project/oxc@228e8e0f85c0e7aeded02c5e27fd810004d3b41a:crates/oxc_linter/src/rules.rs",
+      "source_receipt": "github-actions:run/32257998359#focused-oxc-edit-class",
       "value_state": {
         "state": "known",
         "value_ref": "syntax_changed"
       },
       "applicability": {
         "status": "applies",
-        "receipt_ref": "oxc-project/oxc@8783524015b1e6ff1c39ccf426df0bb07cbbc588"
+        "receipt_ref": "github-actions:run/32257998359#focused-oxc-applicability"
       }
     },
     {
