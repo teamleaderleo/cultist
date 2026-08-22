@@ -5,7 +5,10 @@ use serde_json::Value;
 
 #[test]
 fn quarry_mako_563_preflight_has_no_direct_path_collision() {
-    let root = std::env::temp_dir().join(format!("cultist-quarry-mako-root-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!(
+        "cultist-quarry-mako-root-{}",
+        std::process::id()
+    ));
     let inventory_path = std::env::temp_dir().join(format!(
         "cultist-quarry-mako-inventory-{}.json",
         std::process::id()
