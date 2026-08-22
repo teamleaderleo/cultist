@@ -100,6 +100,16 @@ fn snapshot_identity(selection_identity: &str, work_fact_identity: &str) -> Stri
     encoded
 }
 
+fn current_snapshot_identity(
+    selection_identity: Option<&str>,
+    work_fact_identity: Option<&str>,
+) -> Option<String> {
+    match (selection_identity, work_fact_identity) {
+        (Some(selection), Some(work)) => Some(snapshot_identity(selection, work)),
+        _ => None,
+    }
+}
+
 fn baseline_snapshot_identity() -> String {
     snapshot_identity(
         &selection_contract::baseline_identity(),
@@ -205,6 +215,25 @@ fn unavailable_current_provider_snapshot_is_unknown() {
 
     assert_eq!(
         evaluate_snapshot(&required, None),
+        ApplicabilityStatus::Unknown
+    );
+}
+
+#[test]
+fn missing_current_selection_or_work_fact_component_is_unknown() {
+    let required = baseline_snapshot_identity();
+    let selection = selection_contract::baseline_identity();
+    let work = work_fact_contract::baseline_identity();
+
+    let missing_selection = current_snapshot_identity(None, Some(&work));
+    let missing_work = current_snapshot_identity(Some(&selection), None);
+
+    assert_eq!(
+        evaluate_snapshot(&required, missing_selection.as_deref()),
+        ApplicabilityStatus::Unknown
+    );
+    assert_eq!(
+        evaluate_snapshot(&required, missing_work.as_deref()),
         ApplicabilityStatus::Unknown
     );
 }
