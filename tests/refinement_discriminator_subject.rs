@@ -21,17 +21,21 @@ use refinement_episode::parse_refinement_episode_batch;
 
 const OBSERVATIONS: &[u8] =
     include_bytes!("../research/discriminator-observations/cultist-v1.json");
+const FOCUSED_OXC_OBSERVATION: &[u8] = include_bytes!(
+    "../research/refinement-observation-requirements/oxc-focused-edit-class-v1.json"
+);
 const REFINEMENTS: &[u8] = include_bytes!("../research/refinement-episodes/cultist-v1.json");
+
+fn focused_oxc_observation() -> discriminator_observation::DiscriminatorObservation {
+    let batch = parse_discriminator_observation_batch(FOCUSED_OXC_OBSERVATION).unwrap();
+    assert_eq!(batch.observations.len(), 1);
+    batch.observations[0].clone()
+}
 
 #[test]
 fn id_only_refinement_coverage_can_accept_wrong_subject_while_exact_frontier_is_missing() {
     let original = parse_discriminator_observation_batch(OBSERVATIONS).unwrap();
-    let exact = original
-        .observations
-        .iter()
-        .find(|observation| observation.discriminator_id == "edit_class")
-        .expect("retained Oxc edit_class observation")
-        .clone();
+    let exact = focused_oxc_observation();
     assert_eq!(
         exact.subject_ref,
         "oxc-project/oxc@228e8e0f85c0e7aeded02c5e27fd810004d3b41a:crates/oxc_linter/src/rules.rs"
@@ -67,7 +71,7 @@ fn id_only_refinement_coverage_can_accept_wrong_subject_while_exact_frontier_is_
     let mut observations = original.clone();
     observations
         .observations
-        .retain(|observation| observation.observation_id != exact.observation_id);
+        .retain(|observation| observation.discriminator_id != "edit_class");
     observations.observations.push(wrong_subject);
 
     // This is the current #187 cross-object sufficiency species: availability
@@ -113,13 +117,12 @@ fn id_only_refinement_coverage_can_accept_wrong_subject_while_exact_frontier_is_
 }
 
 #[test]
-fn exact_retained_subject_is_current_control() {
-    let observations = parse_discriminator_observation_batch(OBSERVATIONS).unwrap();
-    let exact = observations
-        .observations
-        .iter()
-        .find(|observation| observation.discriminator_id == "edit_class")
-        .expect("retained Oxc edit_class observation");
+fn exact_focused_subject_is_current_control() {
+    let exact = focused_oxc_observation();
+    let observations = discriminator_observation::DiscriminatorObservationBatch {
+        schema_version: discriminator_observation::DISCRIMINATOR_OBSERVATION_SCHEMA_VERSION,
+        observations: vec![exact.clone()],
+    };
     let evaluation = evaluate_observation_frontiers(&ObservationFrontierRequest {
         schema_version: OBSERVATION_FRONTIER_SCHEMA_VERSION,
         requirements: vec![ObservationRequirement {
