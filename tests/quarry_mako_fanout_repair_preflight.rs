@@ -14,11 +14,27 @@ fn quarry_mako_fanout_repair_preflight_is_path_quiet_and_semantically_unknown() 
         std::process::id()
     ));
     fs::create_dir_all(&root).expect("create empty Quarry analysis root");
+    fs::write(root.join(".gitignore"), "\n").expect("write seed file");
+    for args in [
+        vec!["init", "-q"],
+        vec!["config", "user.email", "mako@example.invalid"],
+        vec!["config", "user.name", "Mako"],
+        vec!["add", ".gitignore"],
+        vec!["commit", "-q", "-m", "seed"],
+    ] {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(args)
+            .status()
+            .expect("run git setup command");
+        assert!(status.success(), "git setup command failed");
+    }
 
     let inventory = r#"{
   "schema_version": 1,
-  "source": "github:manual-bounded-mako-2026-08-22T19:29:20Z",
-  "observed_at": "2026-08-22T19:29:20Z",
+  "source": "github:manual-bounded-mako-2026-08-22T19:36:20Z",
+  "observed_at": "2026-08-22T19:36:20Z",
   "current": {
     "id": "mako/quarry-637-fanout-repair",
     "kind": "planned_repair",
@@ -26,7 +42,7 @@ fn quarry_mako_fanout_repair_preflight_is_path_quiet_and_semantically_unknown() 
     "url": "https://github.com/Coreys-Quarry/quarry/pull/637",
     "head_ref": "main",
     "head_sha": "ff941a6704fa89e987adf170b2b7a30604b0438c",
-    "updated_at": "2026-08-22T19:29:20Z",
+    "updated_at": "2026-08-22T19:36:20Z",
     "draft": false,
     "activity": "preparation",
     "changed_paths": [
@@ -35,6 +51,55 @@ fn quarry_mako_fanout_repair_preflight_is_path_quiet_and_semantically_unknown() 
     ]
   },
   "active_work": [
+    {
+      "id": "pull/724",
+      "kind": "pull_request",
+      "title": "research: profile post-parent regime attribution",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/724",
+      "head_ref": "research/563-post-parent-attribution-profile",
+      "head_sha": "bcc4b158fc393fb4b5f81a2a2aed555d9a1f25a5",
+      "updated_at": "2026-08-22T19:34:45Z",
+      "draft": true,
+      "activity": "confirmed_active",
+      "changed_paths": [
+        ".github/workflows/research-563-post-parent-attribution-profile.yml",
+        "scripts/research_563_post_parent_attribution_profile.py"
+      ]
+    },
+    {
+      "id": "pull/722",
+      "kind": "pull_request",
+      "title": "Research carrier: #687 BTC downside-semivol entry cap",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/722",
+      "head_ref": "research/687-downside-semivol-entry-cap",
+      "head_sha": "bb94cc703d0de003d97e29d9966fc1f97960fcb6",
+      "updated_at": "2026-08-22T19:31:32Z",
+      "draft": false,
+      "activity": "confirmed_active",
+      "changed_paths": [
+        "tests/_research_687_exact_support.py",
+        "tests/test_research_687_carrier.py"
+      ]
+    },
+    {
+      "id": "pull/721",
+      "kind": "pull_request",
+      "title": "research: add narrow IBKR options event evidence lane (#660)",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/721",
+      "head_ref": "research/660-options-event-volatility-v1",
+      "head_sha": "55f365a4c4397db91f77862166c23ac77f3a07fb",
+      "updated_at": "2026-08-22T19:32:09Z",
+      "draft": false,
+      "activity": "confirmed_active",
+      "changed_paths": [
+        ".github/workflows/research-660-options-event-volatility.yml",
+        "docs/options-event-volatility-660.md",
+        "research/results/options-event-volatility-660-v1-data-blocked.json",
+        "src/quarry/options_event_volatility.py",
+        "tests/test_options_event_volatility.py",
+        "tests/test_options_event_volatility_result.py"
+      ]
+    },
     {
       "id": "pull/719",
       "kind": "pull_request",
@@ -56,8 +121,8 @@ fn quarry_mako_fanout_repair_preflight_is_path_quiet_and_semantically_unknown() 
       "title": "feat: persist exact admission and risk execution on one coupled head",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/718",
       "head_ref": "sable/648-single-head-cutover-risk-execution-20260823",
-      "head_sha": "e8a0f5d6e58d48612e5e80e6e963921cf915920d",
-      "updated_at": "2026-08-22T19:29:11Z",
+      "head_sha": "bcabe7df323d9907362e32edecc3a781faf91b26",
+      "updated_at": "2026-08-22T19:36:13Z",
       "draft": false,
       "activity": "confirmed_active",
       "changed_paths": [
@@ -86,8 +151,8 @@ fn quarry_mako_fanout_repair_preflight_is_path_quiet_and_semantically_unknown() 
       "title": "research: run #656 SEC + Yahoo memory read-through v2",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/709",
       "head_ref": "research/656-yahoo-sec-v2",
-      "head_sha": "151b169fd4104a6086483a34e6d8fe3fe4adeb0f",
-      "updated_at": "2026-08-22T19:28:18Z",
+      "head_sha": "fb0edce0dc78cef9b841789f8e372b846f6575d9",
+      "updated_at": "2026-08-22T19:35:28Z",
       "draft": false,
       "activity": "confirmed_active",
       "changed_paths": [
@@ -108,7 +173,7 @@ fn quarry_mako_fanout_repair_preflight_is_path_quiet_and_semantically_unknown() 
       "url": "https://github.com/Coreys-Quarry/quarry/pull/692",
       "head_ref": "research/665-stock-selection-v1",
       "head_sha": "000be92e92aff2bea9c0b63542b27f2f0d269844",
-      "updated_at": "2026-08-22T18:48:05Z",
+      "updated_at": "2026-08-22T19:31:54Z",
       "draft": false,
       "activity": "confirmed_active",
       "changed_paths": [
@@ -123,8 +188,8 @@ fn quarry_mako_fanout_repair_preflight_is_path_quiet_and_semantically_unknown() 
       "title": "feat: add corporate event study and SEC filing baseline",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/691",
       "head_ref": "research/659-corporate-event-study-v1",
-      "head_sha": "30946d26b4185b8564706f073637cf05ffb7aa3b",
-      "updated_at": "2026-08-22T19:08:06Z",
+      "head_sha": "f6a451ccfba1b14f3537fa9f6d62fa5060d636eb",
+      "updated_at": "2026-08-22T19:36:11Z",
       "draft": false,
       "activity": "confirmed_active",
       "changed_paths": [
@@ -138,13 +203,27 @@ fn quarry_mako_fanout_repair_preflight_is_path_quiet_and_semantically_unknown() 
       ]
     },
     {
+      "id": "pull/690",
+      "kind": "pull_request",
+      "title": "[dogfood] Echo one-shot Cultist preflight carrier",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/690",
+      "head_ref": "echo/cultist-preflight-20260823",
+      "head_sha": "8103002a50f165c4600915209dd41439a011e664",
+      "updated_at": "2026-08-22T19:34:06Z",
+      "draft": true,
+      "activity": "confirmed_active",
+      "changed_paths": [
+        ".github/workflows/echo-cultist-preflight.yml"
+      ]
+    },
+    {
       "id": "pull/689",
       "kind": "pull_request",
       "title": "research: admit frozen #645 BTC hourly source",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/689",
       "head_ref": "agent/645-hourly-btc-campaign-20260823",
-      "head_sha": "a91e0133ee228f826c1b4a54ba6a05ee7e9dac6e",
-      "updated_at": "2026-08-22T18:49:56Z",
+      "head_sha": "b175f99aea9cec6477f0b6a69a4e76655a7b2087",
+      "updated_at": "2026-08-22T19:34:23Z",
       "draft": false,
       "activity": "confirmed_active",
       "changed_paths": [
@@ -205,7 +284,7 @@ fn quarry_mako_fanout_repair_preflight_is_path_quiet_and_semantically_unknown() 
         claim["kind"].as_str() == Some("observed")
             && claim["message"]
                 .as_str()
-                .is_some_and(|message| message.contains("Examined 8 supplied work candidate(s)"))
+                .is_some_and(|message| message.contains("Examined 12 supplied work candidate(s)"))
     }));
     assert!(claims.iter().any(|claim| {
         claim["kind"].as_str() == Some("observed")
