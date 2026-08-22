@@ -183,8 +183,10 @@ fn head_and_declared_activity_movement_each_invalidate_snapshot_identity() {
     let selection = selection_contract::baseline_identity();
     let required = snapshot_identity(&selection, &work_fact_contract::baseline_identity());
     let changed_head = snapshot_identity(&selection, &work_fact_contract::changed_head_identity());
-    let changed_activity =
-        snapshot_identity(&selection, &work_fact_contract::unresolved_activity_identity());
+    let changed_activity = snapshot_identity(
+        &selection,
+        &work_fact_contract::unresolved_activity_identity(),
+    );
 
     assert_eq!(
         evaluate_snapshot(&required, Some(&changed_head)),
