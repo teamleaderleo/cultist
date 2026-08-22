@@ -1,0 +1,67 @@
+name: Sable Quarry 648 Cutover Preflight
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    if: github.head_ref == 'dogfood/sable-quarry-648-cutover-preflight-20260822'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run cutover preflight
+        run: |
+          set -euo pipefail
+          inventory="research/fixtures/quarry-sable-648-cutover-active-work-2026-08-22.json"
+          cargo run --quiet -- preflight --inventory "$inventory" --format json . \
+            | tee /tmp/quarry-sable-648-cutover-preflight.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          inventory = json.loads(Path("research/fixtures/quarry-sable-648-cutover-active-work-2026-08-22.json").read_text())
+          report = json.loads(Path("/tmp/quarry-sable-648-cutover-preflight.json").read_text())
+          findings = report.get("findings", [])
+          collisions = [f for f in findings if f.get("kind") == "preflight-inventory-path-overlap"]
+          explicit = [f for f in findings if f.get("kind") == "preflight-explicit-coordination"]
+          unknowns = []
+          for claim in report.get("claims", []):
+              if claim.get("kind") == "unknown":
+                  unknowns.append(claim.get("message"))
+          for finding in findings:
+              for claim in finding.get("claims", []):
+                  if claim.get("kind") == "unknown":
+                      unknowns.append(claim.get("message"))
+
+          assert len(inventory["active_work"]) == 5, inventory["active_work"]
+          assert collisions == [], collisions
+          assert explicit == [], explicit
+
+          receipt = {
+              "supplied_work_items": 5,
+              "collisions": collisions,
+              "explicit_edges": inventory["coordination_edges"],
+              "unknowns": unknowns,
+              "next_action_changed": False,
+              "consequence": "implement a clean current-parent #648 single-head cutover/risk-execution candidate; keep closed #696 and #702 as disposable historical evidence only",
+              "semantic_pressure_case": "closed WIP carriers answer parts of the lane but are excluded from active membership; zero open-path overlap does not establish semantic independence",
+              "provider_membership_note": "fresh provider refresh supplied exactly the five currently open Quarry PRs after #671 merged and #685/#696/#702 closed",
+          }
+          Path("/tmp/quarry-sable-648-cutover-preflight-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          print(json.dumps(receipt, indent=2))
+          PY
+      - name: Upload cutover receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarry-sable-648-cutover-preflight
+          path: |
+            research/fixtures/quarry-sable-648-cutover-active-work-2026-08-22.json
+            /tmp/quarry-sable-648-cutover-preflight.json
+            /tmp/quarry-sable-648-cutover-preflight-receipt.json
