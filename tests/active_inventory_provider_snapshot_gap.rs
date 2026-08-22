@@ -14,9 +14,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use provider_snapshot_applicability::{
-    ProviderSnapshotIdentity, evaluate_provider_snapshot,
-};
+use provider_snapshot_applicability::{ProviderSnapshotIdentity, evaluate_provider_snapshot};
 use serde::Serialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -98,10 +96,7 @@ fn snapshot_identity(selection_identity: &str, work_fact_identity: &str) -> Stri
 }
 
 fn product_identity(work_fact_identity: &str) -> ProviderSnapshotIdentity {
-    let digest = snapshot_identity(
-        &selection_contract::frozen_identity(),
-        work_fact_identity,
-    );
+    let digest = snapshot_identity(&selection_contract::frozen_identity(), work_fact_identity);
     ProviderSnapshotIdentity::parse(format!("sha256:{digest}")).unwrap()
 }
 
@@ -164,8 +159,8 @@ fn frozen_inventory(root: &std::path::Path) -> PathBuf {
 fn analyzer_still_emits_strong_overlap() {
     let root = test_root();
     let inventory = frozen_inventory(&root);
-    let report = active_changes::build_active_inventory_analysis_report(&root, &inventory, None)
-        .unwrap();
+    let report =
+        active_changes::build_active_inventory_analysis_report(&root, &inventory, None).unwrap();
 
     assert!(report.findings.iter().any(|finding| {
         finding.kind == "preflight-inventory-path-overlap"
@@ -181,7 +176,10 @@ fn new_provider_work_invalidates_snapshot_without_gating_frozen_inventory_collis
     let current = current_snapshot_with_new_work();
     let applicability = evaluate_provider_snapshot(&required, Some(&current));
 
-    assert_eq!(applicability.status, applicability::ApplicabilityStatus::Invalid);
+    assert_eq!(
+        applicability.status,
+        applicability::ApplicabilityStatus::Invalid
+    );
     analyzer_still_emits_strong_overlap();
 }
 
@@ -190,7 +188,10 @@ fn unavailable_provider_snapshot_does_not_preserve_unknown_in_consumer() {
     let required = required_snapshot();
     let applicability = evaluate_provider_snapshot(&required, None);
 
-    assert_eq!(applicability.status, applicability::ApplicabilityStatus::Unknown);
+    assert_eq!(
+        applicability.status,
+        applicability::ApplicabilityStatus::Unknown
+    );
     analyzer_still_emits_strong_overlap();
 }
 
@@ -200,5 +201,8 @@ fn exact_same_provider_snapshot_applies_as_control() {
     let current = required_snapshot();
     let applicability = evaluate_provider_snapshot(&required, Some(&current));
 
-    assert_eq!(applicability.status, applicability::ApplicabilityStatus::Applies);
+    assert_eq!(
+        applicability.status,
+        applicability::ApplicabilityStatus::Applies
+    );
 }
