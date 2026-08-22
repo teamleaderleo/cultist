@@ -80,6 +80,72 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CURRENT_PR: ${{ github.event.pull_request.number }}
         run: python scripts/active_work_heads_up_ci.py
+      - name: Quarry Sable active-work preflight receipt
+        if: github.event_name == 'pull_request' && github.head_ref == 'dogfood/sable-quarry-preflight-20260822'
+        run: |
+          set -euo pipefail
+          inventory="research/fixtures/quarry-sable-active-work-2026-08-22.json"
+          cargo run --quiet -- preflight --inventory "$inventory" --format json . \
+            | tee /tmp/quarry-sable-preflight.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          inventory = json.loads(Path("research/fixtures/quarry-sable-active-work-2026-08-22.json").read_text())
+          report = json.loads(Path("/tmp/quarry-sable-preflight.json").read_text())
+          findings = report.get("findings", [])
+          collisions = [
+              finding for finding in findings
+              if finding.get("kind") == "preflight-inventory-path-overlap"
+          ]
+          explicit = [
+              finding for finding in findings
+              if finding.get("kind") == "preflight-explicit-coordination"
+          ]
+          unknowns = []
+          for claim in report.get("claims", []):
+              if claim.get("kind") == "unknown":
+                  unknowns.append(claim.get("message"))
+          for finding in findings:
+              for claim in finding.get("claims", []):
+                  if claim.get("kind") == "unknown":
+                      unknowns.append(claim.get("message"))
+
+          collision_paths = sorted(
+              finding.get("location", {}).get("path") for finding in collisions
+          )
+          expected_paths = [
+              "src/quarry/btc_momentum_prospective.py",
+              "tests/test_btc_momentum_prospective.py",
+          ]
+          assert len(inventory["active_work"]) == 6, inventory["active_work"]
+          assert collision_paths == expected_paths, collision_paths
+          assert len(inventory.get("coordination_edges", [])) == 1, inventory.get("coordination_edges")
+          assert len(explicit) == 1, explicit
+
+          receipt = {
+              "supplied_work_items": len(inventory["active_work"]),
+              "collisions": collision_paths,
+              "explicit_edges": inventory.get("coordination_edges", []),
+              "unknowns": unknowns,
+              "next_action_changed": True,
+              "consequence": "review live #670/#671 and avoid duplicate prospective implementation",
+              "provider_membership_note": "snapshot independently refreshed from all open Quarry PRs before this run",
+          }
+          Path("/tmp/quarry-sable-preflight-receipt.json").write_text(
+              json.dumps(receipt, indent=2) + "\n"
+          )
+          print(json.dumps(receipt, indent=2))
+          PY
+      - name: Upload Quarry Sable preflight receipt
+        if: github.event_name == 'pull_request' && github.head_ref == 'dogfood/sable-quarry-preflight-20260822'
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarry-sable-active-work-preflight
+          path: |
+            research/fixtures/quarry-sable-active-work-2026-08-22.json
+            /tmp/quarry-sable-preflight.json
+            /tmp/quarry-sable-preflight-receipt.json
       - name: Test
         run: cargo test
       - name: Dogfood repository scan
