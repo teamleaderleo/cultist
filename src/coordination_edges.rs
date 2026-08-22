@@ -69,7 +69,7 @@ pub struct CoordinationEdge {
     pub source: String,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct SourceReceipt {
     pub kind: CoordinationKind,
     pub from: String,
@@ -96,6 +96,7 @@ pub struct ExtractionReport {
     pub source: String,
     pub coordination_edges: Vec<CoordinationEdge>,
     pub source_receipts: Vec<SourceReceipt>,
+    pub unresolved_endpoint_receipts: Vec<SourceReceipt>,
     pub stats: ExtractionStats,
     pub unknowns: Vec<String>,
 }
@@ -120,6 +121,7 @@ pub fn extract_snapshot(input: &str) -> Result<ExtractionReport, EdgeError> {
         .collect::<BTreeSet<_>>();
 
     let mut edge_receipts = BTreeMap::<CoordinationEdge, SourceReceipt>::new();
+    let mut unresolved_endpoint_receipts = BTreeSet::<SourceReceipt>::new();
     let mut stats = ExtractionStats {
         work_items_examined: snapshot.work.len(),
         ..ExtractionStats::default()
@@ -158,6 +160,20 @@ pub fn extract_snapshot(input: &str) -> Result<ExtractionReport, EdgeError> {
             }
             if !known_ids.contains(target.as_str()) {
                 stats.unresolved_endpoints_ignored += 1;
+                unresolved_endpoint_receipts.insert(SourceReceipt {
+                    kind: CoordinationKind::HoldMergeWhile,
+                    from: work.id.clone(),
+                    to: target.clone(),
+                    source: work.source.clone(),
+                    source_head_sha: work.head_sha.clone(),
+                    source_updated_at: work.updated_at.clone(),
+                    matched_clause: line.to_string(),
+                });
+                if unresolved_endpoint_receipts.len() > MAX_EDGES {
+                    return Err(EdgeError::new(format!(
+                        "unresolved coordination endpoint receipt count exceeds maximum {MAX_EDGES}"
+                    )));
+                }
                 continue;
             }
 
@@ -190,6 +206,7 @@ pub fn extract_snapshot(input: &str) -> Result<ExtractionReport, EdgeError> {
 
     let coordination_edges = edge_receipts.keys().cloned().collect::<Vec<_>>();
     let source_receipts = edge_receipts.values().cloned().collect::<Vec<_>>();
+    let unresolved_endpoint_receipts = unresolved_endpoint_receipts.into_iter().collect();
 
     Ok(ExtractionReport {
         schema_version: SNAPSHOT_SCHEMA_VERSION,
@@ -197,6 +214,7 @@ pub fn extract_snapshot(input: &str) -> Result<ExtractionReport, EdgeError> {
         source: snapshot.source,
         coordination_edges,
         source_receipts,
+        unresolved_endpoint_receipts,
         stats,
         unknowns: vec![
             "A body-derived edge proves only that the admitted source metadata contained the reviewed operative clause at the recorded head/update coordinates; implementation intent or continued applicability beyond that clause remains unknown without independent evidence.".to_string(),
@@ -426,6 +444,17 @@ mod tests {
         assert!(report.coordination_edges.is_empty());
         assert_eq!(report.stats.self_references_ignored, 1);
         assert_eq!(report.stats.unresolved_endpoints_ignored, 1);
+        assert_eq!(report.unresolved_endpoint_receipts.len(), 1);
+        let unresolved = &report.unresolved_endpoint_receipts[0];
+        assert_eq!(unresolved.from, "#748");
+        assert_eq!(unresolved.to, "#999");
+        assert_eq!(unresolved.source, "github:pull/748");
+        assert_eq!(unresolved.source_head_sha, sha('a'));
+        assert_eq!(unresolved.source_updated_at, "2026-08-19T00:00:00Z");
+        assert_eq!(
+            unresolved.matched_clause,
+            "Do not merge while #999 is active"
+        );
     }
 
     #[test]

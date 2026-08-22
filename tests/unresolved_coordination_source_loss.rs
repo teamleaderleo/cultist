@@ -30,7 +30,7 @@ fn snapshot(first: Value, second: Value) -> String {
 }
 
 #[test]
-fn unresolved_endpoint_erases_which_work_item_authored_the_clause() {
+fn unresolved_endpoint_preserves_which_work_item_authored_the_clause() {
     let current_authored = coordination_edges::extract_snapshot(&snapshot(
         work("#748", "Do not merge while #999 is active\n"),
         work("#703", ""),
@@ -51,7 +51,24 @@ fn unresolved_endpoint_erases_which_work_item_authored_the_clause() {
     assert!(other_authored.source_receipts.is_empty());
     assert_eq!(other_authored.stats.unresolved_endpoints_ignored, 1);
 
-    assert_eq!(current_authored, other_authored);
+    assert_ne!(current_authored, other_authored);
+    assert_eq!(current_authored.unresolved_endpoint_receipts.len(), 1);
+    assert_eq!(
+        current_authored.unresolved_endpoint_receipts[0].from,
+        "#748"
+    );
+    assert_eq!(current_authored.unresolved_endpoint_receipts[0].to, "#999");
+    assert_eq!(
+        current_authored.unresolved_endpoint_receipts[0].source,
+        "github:pull/748"
+    );
+    assert_eq!(other_authored.unresolved_endpoint_receipts.len(), 1);
+    assert_eq!(other_authored.unresolved_endpoint_receipts[0].from, "#703");
+    assert_eq!(other_authored.unresolved_endpoint_receipts[0].to, "#999");
+    assert_eq!(
+        other_authored.unresolved_endpoint_receipts[0].source,
+        "github:pull/703"
+    );
 }
 
 #[test]
