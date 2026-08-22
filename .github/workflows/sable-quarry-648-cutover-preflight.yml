@@ -8,7 +8,6 @@ permissions:
 
 jobs:
   preflight:
-    if: github.head_ref == 'dogfood/sable-quarry-648-cutover-preflight-20260822'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
