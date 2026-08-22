@@ -140,10 +140,17 @@ fn quarry_mako_724_review_surfaces_existing_candidate() {
         .iter()
         .filter(|finding| finding["kind"].as_str() == Some("preflight-inventory-path-overlap"))
         .collect::<Vec<_>>();
-    assert_eq!(overlaps.len(), 2, "expected exact #724 path collision: {stdout}");
+    assert_eq!(
+        overlaps.len(),
+        2,
+        "expected exact #724 path collision: {stdout}"
+    );
     for finding in overlaps {
         let text = serde_json::to_string(finding).expect("serialize finding");
-        assert!(text.contains("pull/724"), "collision must identify #724: {text}");
+        assert!(
+            text.contains("pull/724"),
+            "collision must identify #724: {text}"
+        );
     }
 
     let claims = report["claims"].as_array().expect("claims array");
