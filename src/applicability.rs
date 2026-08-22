@@ -120,6 +120,14 @@ impl fmt::Display for ApplicabilityError {
 
 impl Error for ApplicabilityError {}
 
+pub fn evaluate_exact_coordinate(required: &str, actual: Option<&str>) -> ApplicabilityStatus {
+    match actual {
+        Some(actual) if actual == required => ApplicabilityStatus::Applies,
+        Some(_) => ApplicabilityStatus::Invalid,
+        None => ApplicabilityStatus::Unknown,
+    }
+}
+
 pub fn evaluate_query(
     query: &ApplicabilityQuery,
 ) -> Result<EvidenceApplicability, ApplicabilityError> {
@@ -189,25 +197,16 @@ fn evaluate_exact_dimension(
     required: &str,
     actual: Option<&str>,
 ) -> DimensionEvaluation {
-    match actual {
-        Some(actual) if actual == required => DimensionEvaluation {
-            dimension,
-            status: DimensionStatus::Matched,
-            required: required.to_string(),
-            actual: Some(actual.to_string()),
-        },
-        Some(actual) => DimensionEvaluation {
-            dimension,
-            status: DimensionStatus::Mismatched,
-            required: required.to_string(),
-            actual: Some(actual.to_string()),
-        },
-        None => DimensionEvaluation {
-            dimension,
-            status: DimensionStatus::Missing,
-            required: required.to_string(),
-            actual: None,
-        },
+    let status = match evaluate_exact_coordinate(required, actual) {
+        ApplicabilityStatus::Applies => DimensionStatus::Matched,
+        ApplicabilityStatus::Invalid => DimensionStatus::Mismatched,
+        ApplicabilityStatus::Unknown => DimensionStatus::Missing,
+    };
+    DimensionEvaluation {
+        dimension,
+        status,
+        required: required.to_string(),
+        actual: actual.map(str::to_string),
     }
 }
 
