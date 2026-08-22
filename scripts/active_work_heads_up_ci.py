@@ -278,6 +278,34 @@ def edge_involves_current(inventory: dict[str, object], edge: dict[str, object])
     return str(edge.get("from", "")) == current_id or str(edge.get("to", "")) == current_id
 
 
+def unresolved_endpoint_receipts_involving_current(
+    inventory: dict[str, object], extraction_report: dict[str, object]
+) -> list[dict[str, object]]:
+    receipts = extraction_report.get("unresolved_endpoint_receipts")
+    if not isinstance(receipts, list) or any(
+        not isinstance(receipt, dict) for receipt in receipts
+    ):
+        raise RuntimeError(
+            "coordination extractor did not return unresolved endpoint receipts"
+        )
+    return [
+        receipt
+        for receipt in receipts
+        if edge_involves_current(inventory, receipt)
+    ]
+
+
+def unresolved_endpoint_note(receipts: list[dict[str, object]]) -> str | None:
+    if not receipts:
+        return None
+    count = len(receipts)
+    noun = "endpoint" if count == 1 else "endpoints"
+    return (
+        "Reviewed coordination metadata for current work references "
+        f"{count} {noun} absent from the supplied work inventory; "
+        "current coordination relevance remains unresolved."
+    )
+
 def quiet_status_line(metadata_note: str | None = None) -> str:
     if metadata_note:
         return "Coordination metadata: UNKNOWN; direct path evidence found no overlap."
@@ -299,7 +327,7 @@ def quiet_summary(
     if metadata_note:
         lines.extend(
             [
-                "> Direct path evidence is quiet; reviewed coordination metadata remains unresolved because its analyzer did not complete.",
+                "> Direct path evidence is quiet; reviewed coordination metadata remains unresolved.",
                 "",
                 f"> {metadata_note}",
             ]
@@ -436,9 +464,18 @@ def main() -> None:
                 "coordination metadata: "
                 f"{len(edges)} extracted edge(s), {len(relevant_edges)} involving current work"
             )
+            current_unresolved = unresolved_endpoint_receipts_involving_current(
+                inventory, extraction_report
+            )
+            notes: list[str] = []
+            unresolved_note = unresolved_endpoint_note(current_unresolved)
+            if unresolved_note:
+                notes.append(unresolved_note)
             unknowns = extraction_report.get("unknowns")
             if relevant_edges and isinstance(unknowns, list) and unknowns:
-                metadata_note = str(unknowns[0])
+                notes.append(str(unknowns[0]))
+            if notes:
+                metadata_note = " ".join(notes)
         except (subprocess.CalledProcessError, json.JSONDecodeError, RuntimeError) as error:
             metadata_note = (
                 "Reviewed coordination metadata could not be fully analyzed; "
