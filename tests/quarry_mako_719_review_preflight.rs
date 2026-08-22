@@ -125,7 +125,11 @@ fn quarry_mako_719_review_surfaces_current_and_older_timing_carriers() {
         .iter()
         .filter(|finding| finding["kind"].as_str() == Some("preflight-inventory-path-overlap"))
         .collect::<Vec<_>>();
-    assert_eq!(overlaps.len(), 3, "expected #719/#715 overlap set: {stdout}");
+    assert_eq!(
+        overlaps.len(),
+        3,
+        "expected #719/#715 overlap set: {stdout}"
+    );
     let overlap_text = serde_json::to_string(&overlaps).expect("serialize overlaps");
     assert!(overlap_text.contains("pull/719"));
     assert!(overlap_text.contains("pull/715"));
