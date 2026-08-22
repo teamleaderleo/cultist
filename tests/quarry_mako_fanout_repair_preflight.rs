@@ -195,7 +195,10 @@ fn quarry_mako_fanout_repair_preflight_is_path_quiet_and_semantically_unknown() 
     let stdout = String::from_utf8(output.stdout).expect("preflight output is utf-8");
     let report: Value = serde_json::from_str(&stdout).expect("preflight output is json");
     let findings = report["findings"].as_array().expect("findings array");
-    assert!(findings.is_empty(), "unexpected supplied-work finding: {stdout}");
+    assert!(
+        findings.is_empty(),
+        "unexpected supplied-work finding: {stdout}"
+    );
 
     let claims = report["claims"].as_array().expect("claims array");
     assert!(claims.iter().any(|claim| {
