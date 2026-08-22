@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "analysis": "test-module-conventions",
+  "repository": "/home/runner/work/cultist/cultist/target",
+  "claims": [
+    {
+      "kind": "observed",
+      "message": "Found 130 test-gated modules across 4 distinct names.",
+      "evidence": [
+        {
+          "message": "Repository counts: `tests`=127, `clone_identity_tests`=1, `publication_fault`=1, `publication_fault_tests`=1."
+        }
+      ]
+    },
+    {
+      "kind": "observed",
+      "message": "`tests` is the most frequent test-module name (127 of 130)."
+    }
+  ],
+  "findings": [
+    {
+      "kind": "test-module-local-mix",
+      "title": "File-local test-module naming mix",
+      "location": {
+        "path": "src/unix_personal_worker_store.rs"
+      },
+      "claims": [
+        {
+          "kind": "observed",
+          "message": "This file uses 3 different names for test-gated modules: `publication_fault`, `publication_fault_tests`, `tests`.",
+          "evidence": [
+            {
+              "message": "`mod publication_fault` is test-gated here.",
+              "location": {
+                "path": "src/unix_personal_worker_store.rs",
+                "line": 35
+              }
+            },
+            {
+              "message": "`mod publication_fault_tests` is test-gated here.",
+              "location": {
+                "path": "src/unix_personal_worker_store.rs",
+                "line": 37
+              }
+            },
+            {
+              "message": "`mod tests` is test-gated here.",
+              "location": {
+                "path": "src/unix_personal_worker_store.rs",
+                "line": 1326
+              }
+            }
+          ]
+        }
+      ],
+      "question": "Is the local mix deliberate, or would one name make the file easier to read?"
+    },
+    {
+      "kind": "test-module-one-off",
+      "title": "One-off test-module name",
+      "location": {
+        "path": "src/disposable_attempt_catalog.rs",
+        "line": 1092
+      },
+      "claims": [
+        {
+          "kind": "observed",
+          "message": "`clone_identity_tests` appears once across 130 test-gated modules.",
+          "evidence": [
+            {
+              "message": "`mod clone_identity_tests` is declared here.",
+              "location": {
+                "path": "src/disposable_attempt_catalog.rs",
+                "line": 1092
+              }
+            }
+          ]
+        }
+      ],
+      "question": "Is this one-off name intentionally scoped, or an accidental deviation from local precedent?"
+    },
+    {
+      "kind": "test-module-one-off",
+      "title": "One-off test-module name",
+      "location": {
+        "path": "src/unix_personal_worker_store.rs",
+        "line": 35
+      },
+      "claims": [
+        {
+          "kind": "observed",
+          "message": "`publication_fault` appears once across 130 test-gated modules.",
+          "evidence": [
+            {
+              "message": "`mod publication_fault` is declared here.",
+              "location": {
+                "path": "src/unix_personal_worker_store.rs",
+                "line": 35
+              }
+            }
+          ]
+        }
+      ],
+      "question": "Is this one-off name intentionally scoped, or an accidental deviation from local precedent?"
+    },
+    {
+      "kind": "test-module-one-off",
+      "title": "One-off test-module name",
+      "location": {
+        "path": "src/unix_personal_worker_store.rs",
+        "line": 37
+      },
+      "claims": [
+        {
+          "kind": "observed",
+          "message": "`publication_fault_tests` appears once across 130 test-gated modules.",
+          "evidence": [
+            {
+              "message": "`mod publication_fault_tests` is declared here.",
+              "location": {
+                "path": "src/unix_personal_worker_store.rs",
+                "line": 37
+              }
+            }
+          ]
+        }
+      ],
+      "question": "Is this one-off name intentionally scoped, or an accidental deviation from local precedent?"
+    }
+  ]
+}
