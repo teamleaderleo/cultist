@@ -69,6 +69,7 @@ struct SelectionInput<'a> {
     draft_policy: DraftPolicyInput,
     traversal_mode: TraversalModeInput,
     page_size: u32,
+    max_items: Option<u32>,
     order_field: OrderFieldInput,
     order_direction: OrderDirectionInput,
 }
@@ -90,7 +91,7 @@ struct SelectionDocument {
 enum CoverageIdentity {
     Exhaustive,
     Bounded {
-        limit: u32,
+        max_items: u32,
         order_field: String,
         order_direction: String,
     },
@@ -172,10 +173,19 @@ fn selection_document(input: &SelectionInput<'_>) -> Result<SelectionDocument, S
         return Err("selection contract must contain at least one provider state".to_string());
     }
 
-    let coverage = match input.traversal_mode {
-        TraversalModeInput::Exhaustive => CoverageIdentity::Exhaustive,
-        TraversalModeInput::Bounded => CoverageIdentity::Bounded {
-            limit: input.page_size,
+    let coverage = match (input.traversal_mode, input.max_items) {
+        (TraversalModeInput::Exhaustive, None) => CoverageIdentity::Exhaustive,
+        (TraversalModeInput::Exhaustive, Some(_)) => {
+            return Err("exhaustive traversal must not declare max_items".to_string());
+        }
+        (TraversalModeInput::Bounded, None) => {
+            return Err("bounded traversal requires max_items".to_string());
+        }
+        (TraversalModeInput::Bounded, Some(0)) => {
+            return Err("bounded max_items must be positive".to_string());
+        }
+        (TraversalModeInput::Bounded, Some(max_items)) => CoverageIdentity::Bounded {
+            max_items,
             order_field: input.order_field.as_str().to_string(),
             order_direction: input.order_direction.as_str().to_string(),
         },
@@ -226,9 +236,17 @@ fn baseline() -> SelectionInput<'static> {
         draft_policy: DraftPolicyInput::Include,
         traversal_mode: TraversalModeInput::Exhaustive,
         page_size: 100,
+        max_items: None,
         order_field: OrderFieldInput::UpdatedAt,
         order_direction: OrderDirectionInput::Desc,
     }
+}
+
+fn bounded(max_items: u32) -> SelectionInput<'static> {
+    let mut input = baseline();
+    input.traversal_mode = TraversalModeInput::Bounded;
+    input.max_items = Some(max_items);
+    input
 }
 
 #[test]
@@ -329,13 +347,22 @@ fn exhaustive_transport_order_and_page_size_do_not_change_selection_identity() {
 }
 
 #[test]
-fn bounded_population_size_and_order_are_selection_relevant() {
-    let mut first = baseline();
-    first.traversal_mode = TraversalModeInput::Bounded;
-    first.page_size = 50;
+fn bounded_transport_page_size_does_not_change_selection_identity() {
+    let mut first = bounded(100);
+    first.page_size = 20;
+    let mut second = bounded(100);
+    second.page_size = 100;
 
-    let mut different_limit = first.clone();
-    different_limit.page_size = 100;
+    assert_eq!(
+        selection_identity(&first).unwrap(),
+        selection_identity(&second).unwrap()
+    );
+}
+
+#[test]
+fn bounded_population_limit_and_order_are_selection_relevant() {
+    let first = bounded(100);
+    let different_limit = bounded(50);
     let mut different_order = first.clone();
     different_order.order_field = OrderFieldInput::CreatedAt;
     different_order.order_direction = OrderDirectionInput::Asc;
@@ -353,8 +380,7 @@ fn bounded_population_size_and_order_are_selection_relevant() {
 #[test]
 fn exhaustive_and_bounded_population_contracts_differ() {
     let exhaustive = baseline();
-    let mut bounded = baseline();
-    bounded.traversal_mode = TraversalModeInput::Bounded;
+    let bounded = bounded(100);
 
     assert_ne!(
         selection_identity(&exhaustive).unwrap(),
@@ -363,7 +389,7 @@ fn exhaustive_and_bounded_population_contracts_differ() {
 }
 
 #[test]
-fn malformed_scope_and_duplicate_states_fail_closed() {
+fn malformed_scope_coverage_and_duplicate_states_fail_closed() {
     let mut malformed_collection = baseline();
     malformed_collection.collection = "teamleaderleo/cultist/extra";
     assert!(selection_identity(&malformed_collection).is_err());
@@ -376,4 +402,17 @@ fn malformed_scope_and_duplicate_states_fail_closed() {
     duplicate_states.states = vec!["open", "OPEN"];
     let error = selection_identity(&duplicate_states).unwrap_err();
     assert!(error.contains("duplicate provider state"));
+
+    let mut exhaustive_with_bound = baseline();
+    exhaustive_with_bound.max_items = Some(100);
+    assert!(selection_identity(&exhaustive_with_bound).is_err());
+
+    let mut bounded_without_bound = baseline();
+    bounded_without_bound.traversal_mode = TraversalModeInput::Bounded;
+    assert!(selection_identity(&bounded_without_bound).is_err());
+
+    let mut zero_bound = baseline();
+    zero_bound.traversal_mode = TraversalModeInput::Bounded;
+    zero_bound.max_items = Some(0);
+    assert!(selection_identity(&zero_bound).is_err());
 }
