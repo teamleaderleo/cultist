@@ -1,35 +1,31 @@
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 
 use serde_json::Value;
 
 #[test]
 fn quarry_mako_563_preflight_has_no_direct_path_collision() {
-    let root =
-        std::env::temp_dir().join(format!("cultist-quarry-mako-root-{}", std::process::id()));
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let inventory_path = std::env::temp_dir().join(format!(
         "cultist-quarry-mako-inventory-{}.json",
         std::process::id()
     ));
-    fs::create_dir_all(&root).expect("create empty Quarry analysis root");
 
     let inventory = r#"{
   "schema_version": 1,
-  "source": "github:manual-bounded-mako-2026-08-22T18:36:50Z",
-  "observed_at": "2026-08-22T18:36:50Z",
+  "source": "github:manual-bounded-mako-2026-08-22T18:40:50Z",
+  "observed_at": "2026-08-22T18:40:50Z",
   "current": {
     "id": "mako/quarry-563-post-merge-review",
     "kind": "planned_review",
     "title": "Mako post-merge adversarial review of Quarry #637",
     "url": "https://github.com/Coreys-Quarry/quarry/pull/637",
     "head_ref": "main",
-    "head_sha": "2b072b6ab6f01060e67c11b4306a3338e164700b",
-    "updated_at": "2026-08-22T18:36:50Z",
+    "head_sha": "c570b460869933c31b2b9f81b88f688aced3eb56",
+    "updated_at": "2026-08-22T18:40:50Z",
     "draft": false,
-    "changed_paths": [
-      "src/quarry/research_supergraph.py",
-      "tests/test_research_supergraph_mako_adversarial.py"
-    ]
+    "changed_paths": ["tests/test_research_supergraph_mako_adversarial.py"]
   },
   "active_work": [
     {
@@ -38,8 +34,8 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
       "title": "feat: retain durable exact research abstain decisions",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/671",
       "head_ref": "kiln/633-durable-abstain-final",
-      "head_sha": "0a95dcd52e282bbeabfbcd9662c44f472ca029f5",
-      "updated_at": "2026-08-22T18:32:39Z",
+      "head_sha": "4ef102243e6026618e410d1f781809817fe8238d",
+      "updated_at": "2026-08-22T18:40:43Z",
       "draft": false,
       "changed_paths": [
         "src/quarry/_exact_research_engine.py",
@@ -48,21 +44,6 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
         "src/quarry/exact_research_result_artifact.py",
         "tests/test_exact_research_abstain.py",
         "tests/test_exact_research_result_artifact_abstain.py"
-      ]
-    },
-    {
-      "id": "pull/682",
-      "kind": "pull_request",
-      "title": "research: retain #656 memory read-through data blocker",
-      "url": "https://github.com/Coreys-Quarry/quarry/pull/682",
-      "head_ref": "research/656-mu-memory-readthrough-v1-current",
-      "head_sha": "5bd7087e5719dd8123ffaf0a72affbb5cf895cc0",
-      "updated_at": "2026-08-22T18:32:56Z",
-      "draft": false,
-      "changed_paths": [
-        "research/experiments/semiconductor-memory-readthrough-v1-data-blocker.json",
-        "research/programs/semiconductor-memory-readthrough-v1.json",
-        "tests/test_semiconductor_memory_readthrough_program.py"
       ]
     },
     {
@@ -83,7 +64,7 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
       "url": "https://github.com/Coreys-Quarry/quarry/pull/685",
       "head_ref": "wip/633-prospective-hardening-current",
       "head_sha": "a4adef30f72b8f5ac2891c7481509dbeb8075bbe",
-      "updated_at": "2026-08-22T18:34:05Z",
+      "updated_at": "2026-08-22T18:38:55Z",
       "draft": false,
       "changed_paths": [
         "src/quarry/btc_momentum_prospective.py",
@@ -98,8 +79,8 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
       "title": "research: add #663 deterministic news-cycle novelty baseline",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/686",
       "head_ref": "codex/issue-663-news-cycle-novelty-baseline",
-      "head_sha": "b2ae98130994b7a2e30ee4169f33313cb674655d",
-      "updated_at": "2026-08-22T18:29:00Z",
+      "head_sha": "9fbc5f81e111cb04a6c742cf2239162db412a607",
+      "updated_at": "2026-08-22T18:39:31Z",
       "draft": false,
       "changed_paths": [
         "research/news_cycle/issue_663_inventory.json",
@@ -124,24 +105,13 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
       ]
     },
     {
-      "id": "pull/690",
-      "kind": "pull_request",
-      "title": "[dogfood] Echo one-shot Cultist preflight carrier",
-      "url": "https://github.com/Coreys-Quarry/quarry/pull/690",
-      "head_ref": "echo/cultist-preflight-20260823",
-      "head_sha": "edc0f895d14b2f2f19459187eb59935e9f5b590e",
-      "updated_at": "2026-08-22T18:34:40Z",
-      "draft": true,
-      "changed_paths": [".github/workflows/echo-cultist-preflight.yml"]
-    },
-    {
       "id": "pull/691",
       "kind": "pull_request",
       "title": "feat: add transparent corporate event study baseline",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/691",
       "head_ref": "research/659-corporate-event-study-v1",
       "head_sha": "6a4afd0780eb30043098aa2a885f37c0f586b742",
-      "updated_at": "2026-08-22T18:36:48Z",
+      "updated_at": "2026-08-22T18:37:01Z",
       "draft": false,
       "changed_paths": [
         "research/programs/corporate-event-study-659-v1.json",
@@ -156,13 +126,38 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
       "title": "research: freeze #665 stock-selection v1 admission gate",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/692",
       "head_ref": "research/665-stock-selection-v1",
-      "head_sha": "a4aa9f7c5c6f49b83c084d3628f6ebe6a05af2c9",
-      "updated_at": "2026-08-22T18:34:28Z",
+      "head_sha": "7cbf7c03e4f53490c830c6702d56017bd008c73e",
+      "updated_at": "2026-08-22T18:40:50Z",
       "draft": false,
       "changed_paths": [
         "docs/stock-selection-research.md",
         "src/quarry/stock_selection_research.py",
         "tests/test_stock_selection_research.py"
+      ]
+    },
+    {
+      "id": "pull/693",
+      "kind": "pull_request",
+      "title": "[research] #658 Yahoo defense replenishment event-study carrier",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/693",
+      "head_ref": "research/658-defense-replenishment-yahoo-v2",
+      "head_sha": "5b508375598240ad06842cb917e08c5ee5f505a4",
+      "updated_at": "2026-08-22T18:39:06Z",
+      "draft": false,
+      "changed_paths": ["tests/test_research_658_yahoo_carrier.py"]
+    },
+    {
+      "id": "pull/694",
+      "kind": "pull_request",
+      "title": "research: measure scorecard bound-parent admission",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/694",
+      "head_ref": "research/563-scorecard-bound-parent-admission",
+      "head_sha": "1d9ffb1796fa77b7999e31e507f425fbe700804b",
+      "updated_at": "2026-08-22T18:40:48Z",
+      "draft": true,
+      "changed_paths": [
+        ".github/workflows/research-563-scorecard-bound-parent-admission.yml",
+        "scripts/research_563_scorecard_bound_parent_admission.py"
       ]
     }
   ],
@@ -188,6 +183,7 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("preflight output is utf-8");
+    println!("Mako Cultist preflight report: {stdout}");
     let report: Value = serde_json::from_str(&stdout).expect("preflight output is json");
     let findings = report["findings"].as_array().expect("findings array");
     let active_collisions = findings
@@ -204,5 +200,4 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
     );
 
     fs::remove_file(&inventory_path).ok();
-    fs::remove_dir_all(&root).ok();
 }
