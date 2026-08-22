@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source": "github_connector_open_pr_snapshot",
-  "observed_at": "2026-08-22T19:11:08Z",
+  "observed_at": "2026-08-22T19:14:51Z",
   "current": {
     "id": "sable-648-single-head-cutover",
     "kind": "planned_work",
@@ -9,30 +9,55 @@
     "url": "https://github.com/Coreys-Quarry/quarry/issues/648",
     "head_ref": "planned/648-single-head-cutover",
     "head_sha": "ff941a6704fa89e987adf170b2b7a30604b0438c",
-    "updated_at": "2026-08-22T19:11:08Z",
+    "updated_at": "2026-08-22T19:14:51Z",
     "draft": false,
     "changed_paths": [
-      "src/quarry/_exact_risk_paper_contract.py",
-      "src/quarry/_exact_risk_paper_io.py",
-      "src/quarry/_exact_risk_paper_replay.py",
-      "src/quarry/_exact_risk_paper_store.py",
-      "src/quarry/exact_risk_paper.py",
-      "tests/test_exact_risk_paper_v2_cutover.py"
+      "src/quarry/exact_coupled_authority_v2.py",
+      "tests/test_exact_coupled_authority_v2.py"
     ]
   },
   "active_work": [
     {
-      "id": "#705",
+      "id": "#710",
       "kind": "pull_request",
-      "title": "research: profile exact evaluator internals",
-      "url": "https://github.com/Coreys-Quarry/quarry/pull/705",
-      "head_ref": "research/563-evaluator-internals-profile",
-      "head_sha": "b3b04390cee5b822b006b17ae8acc74a04d1a3f1",
-      "updated_at": "2026-08-22T19:11:08Z",
+      "title": "research: measure exact evaluation timing parent reuse",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/710",
+      "head_ref": "research/563-evaluation-timing-parent-reuse",
+      "head_sha": "31a63c997c50c7b32ffb42b466a19ca5dc801562",
+      "updated_at": "2026-08-22T19:14:51Z",
       "draft": true,
       "changed_paths": [
-        ".github/workflows/research-563-evaluator-internals-profile.yml",
-        "scripts/research_563_evaluator_internals_profile.py"
+        ".github/workflows/research-563-evaluation-timing-parent-reuse.yml",
+        "scripts/research_563_evaluation_timing_parent_reuse.py"
+      ]
+    },
+    {
+      "id": "#709",
+      "kind": "pull_request",
+      "title": "research: run #656 SEC + Yahoo memory read-through v2",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/709",
+      "head_ref": "research/656-yahoo-sec-v2",
+      "head_sha": "ea427b1c4d2aea05fe30cd756420c388121977f6",
+      "updated_at": "2026-08-22T19:14:29Z",
+      "draft": true,
+      "changed_paths": [
+        ".github/workflows/research-656-yahoo-sec-v2.yml",
+        "src/quarry/public_equity_history.py",
+        "tests/test_public_equity_history.py",
+        "tests/test_research_656_yahoo_sec_live.py"
+      ]
+    },
+    {
+      "id": "#708",
+      "kind": "pull_request",
+      "title": "Research carrier: #706 post-2021 major-crypto source probe",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/708",
+      "head_ref": "research/706-major-crypto-source-probe",
+      "head_sha": "930e645beeca44a260014f8dcf99404f918363b0",
+      "updated_at": "2026-08-22T19:13:30Z",
+      "draft": false,
+      "changed_paths": [
+        "tests/test_research_706_major_crypto_source_probe.py"
       ]
     },
     {
