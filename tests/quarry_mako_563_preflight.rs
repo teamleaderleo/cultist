@@ -5,10 +5,8 @@ use serde_json::Value;
 
 #[test]
 fn quarry_mako_563_preflight_has_no_direct_path_collision() {
-    let root = std::env::temp_dir().join(format!(
-        "cultist-quarry-mako-root-{}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("cultist-quarry-mako-root-{}", std::process::id()));
     let inventory_path = std::env::temp_dir().join(format!(
         "cultist-quarry-mako-inventory-{}.json",
         std::process::id()
@@ -17,8 +15,8 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
 
     let inventory = r#"{
   "schema_version": 1,
-  "source": "github:manual-bounded-mako-2026-08-22T18:31Z",
-  "observed_at": "2026-08-22T18:31:00Z",
+  "source": "github:manual-bounded-mako-2026-08-22T18:36:50Z",
+  "observed_at": "2026-08-22T18:36:50Z",
   "current": {
     "id": "mako/quarry-563-post-merge-review",
     "kind": "planned_review",
@@ -26,7 +24,7 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
     "url": "https://github.com/Coreys-Quarry/quarry/pull/637",
     "head_ref": "main",
     "head_sha": "2b072b6ab6f01060e67c11b4306a3338e164700b",
-    "updated_at": "2026-08-22T18:31:00Z",
+    "updated_at": "2026-08-22T18:36:50Z",
     "draft": false,
     "changed_paths": [
       "src/quarry/research_supergraph.py",
@@ -41,7 +39,7 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
       "url": "https://github.com/Coreys-Quarry/quarry/pull/671",
       "head_ref": "kiln/633-durable-abstain-final",
       "head_sha": "0a95dcd52e282bbeabfbcd9662c44f472ca029f5",
-      "updated_at": "2026-08-22T18:26:35Z",
+      "updated_at": "2026-08-22T18:32:39Z",
       "draft": false,
       "changed_paths": [
         "src/quarry/_exact_research_engine.py",
@@ -58,27 +56,13 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
       "title": "research: retain #656 memory read-through data blocker",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/682",
       "head_ref": "research/656-mu-memory-readthrough-v1-current",
-      "head_sha": "cdf41a6fee86aff63b5d2ea7e75bbb442e8c3866",
-      "updated_at": "2026-08-22T18:26:30Z",
+      "head_sha": "5bd7087e5719dd8123ffaf0a72affbb5cf895cc0",
+      "updated_at": "2026-08-22T18:32:56Z",
       "draft": false,
       "changed_paths": [
         "research/experiments/semiconductor-memory-readthrough-v1-data-blocker.json",
         "research/programs/semiconductor-memory-readthrough-v1.json",
         "tests/test_semiconductor_memory_readthrough_program.py"
-      ]
-    },
-    {
-      "id": "pull/683",
-      "kind": "pull_request",
-      "title": "[research] #658 frozen defense replenishment event-study carrier",
-      "url": "https://github.com/Coreys-Quarry/quarry/pull/683",
-      "head_ref": "research/658-defense-replenishment-event-study-v1",
-      "head_sha": "45e5c8e1ec21f1dda03f9cf23b2b81e19518bb80",
-      "updated_at": "2026-08-22T18:30:41Z",
-      "draft": false,
-      "changed_paths": [
-        "tests/test_research_658_carrier.py",
-        "tests/test_research_658_receipt.py"
       ]
     },
     {
@@ -98,8 +82,8 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
       "title": "WIP carrier: harden #633 frozen prospective BTC momentum ledger",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/685",
       "head_ref": "wip/633-prospective-hardening-current",
-      "head_sha": "a6f35d47ec9487899d719627b95cc79eb5cedb6f",
-      "updated_at": "2026-08-22T18:28:59Z",
+      "head_sha": "a4adef30f72b8f5ac2891c7481509dbeb8075bbe",
+      "updated_at": "2026-08-22T18:34:05Z",
       "draft": false,
       "changed_paths": [
         "src/quarry/btc_momentum_prospective.py",
@@ -124,35 +108,61 @@ fn quarry_mako_563_preflight_has_no_direct_path_collision() {
       ]
     },
     {
-      "id": "pull/688",
-      "kind": "pull_request",
-      "title": "research: recompose alpha with owned result sources",
-      "url": "https://github.com/Coreys-Quarry/quarry/pull/688",
-      "head_ref": "research/563-combined-alpha-owned-source",
-      "head_sha": "c432880fd52e9a76b64bb224917b9c32bb09a3f3",
-      "updated_at": "2026-08-22T18:30:31Z",
-      "draft": true,
-      "changed_paths": [
-        ".github/workflows/research-563-combined-alpha-owned-source.yml",
-        "scripts/research_563_combined_alpha_composition.py",
-        "scripts/research_563_combined_alpha_owned_source.py",
-        "src/quarry/_exact_regime_attribution_receipts.py"
-      ]
-    },
-    {
       "id": "pull/689",
       "kind": "pull_request",
       "title": "research: admit frozen #645 BTC hourly source",
       "url": "https://github.com/Coreys-Quarry/quarry/pull/689",
       "head_ref": "agent/645-hourly-btc-campaign-20260823",
-      "head_sha": "f4d3881e3b8c75a44f97cc3231d12bea28904865",
-      "updated_at": "2026-08-22T18:30:56Z",
-      "draft": true,
+      "head_sha": "a91e0133ee228f826c1b4a54ba6a05ee7e9dac6e",
+      "updated_at": "2026-08-22T18:32:17Z",
+      "draft": false,
       "changed_paths": [
         ".github/workflows/hourly-btc-source.yml",
         "configs/research/hourly_btc_baselines_v1.json",
         "src/quarry/hourly_source.py",
         "tests/test_hourly_source.py"
+      ]
+    },
+    {
+      "id": "pull/690",
+      "kind": "pull_request",
+      "title": "[dogfood] Echo one-shot Cultist preflight carrier",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/690",
+      "head_ref": "echo/cultist-preflight-20260823",
+      "head_sha": "edc0f895d14b2f2f19459187eb59935e9f5b590e",
+      "updated_at": "2026-08-22T18:34:40Z",
+      "draft": true,
+      "changed_paths": [".github/workflows/echo-cultist-preflight.yml"]
+    },
+    {
+      "id": "pull/691",
+      "kind": "pull_request",
+      "title": "feat: add transparent corporate event study baseline",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/691",
+      "head_ref": "research/659-corporate-event-study-v1",
+      "head_sha": "6a4afd0780eb30043098aa2a885f37c0f586b742",
+      "updated_at": "2026-08-22T18:36:48Z",
+      "draft": false,
+      "changed_paths": [
+        "research/programs/corporate-event-study-659-v1.json",
+        "research/results/corporate-event-study-659-v1-data-blocked.json",
+        "src/quarry/company_event_study.py",
+        "tests/test_company_event_study.py"
+      ]
+    },
+    {
+      "id": "pull/692",
+      "kind": "pull_request",
+      "title": "research: freeze #665 stock-selection v1 admission gate",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/692",
+      "head_ref": "research/665-stock-selection-v1",
+      "head_sha": "a4aa9f7c5c6f49b83c084d3628f6ebe6a05af2c9",
+      "updated_at": "2026-08-22T18:34:28Z",
+      "draft": false,
+      "changed_paths": [
+        "docs/stock-selection-research.md",
+        "src/quarry/stock_selection_research.py",
+        "tests/test_stock_selection_research.py"
       ]
     }
   ],
