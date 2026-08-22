@@ -72,7 +72,10 @@ fn resolved_endpoint_preserves_authorship_as_a_control() {
     assert_eq!(current_authored.coordination_edges.len(), 1);
     assert_eq!(current_authored.coordination_edges[0].from, "#748");
     assert_eq!(current_authored.coordination_edges[0].to, "#703");
-    assert_eq!(current_authored.source_receipts[0].source, "github:pull/748");
+    assert_eq!(
+        current_authored.source_receipts[0].source,
+        "github:pull/748"
+    );
 
     assert_eq!(other_authored.coordination_edges.len(), 1);
     assert_eq!(other_authored.coordination_edges[0].from, "#703");
