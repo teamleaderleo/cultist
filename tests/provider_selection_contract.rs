@@ -6,6 +6,25 @@ use sha2::{Digest, Sha256};
 
 const SELECTION_SCHEMA_VERSION: u32 = 0;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ProviderKindInput {
+    Github,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum WorkKindInput {
+    PullRequest,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ProviderStateInput {
+    Open,
+    Closed,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DraftPolicyInput {
     Include,
@@ -61,11 +80,11 @@ impl OrderDirectionInput {
 
 #[derive(Clone, Debug)]
 struct SelectionInput<'a> {
-    provider_kind: &'a str,
+    provider_kind: ProviderKindInput,
     provider_instance: &'a str,
     collection: &'a str,
-    work_kind: &'a str,
-    states: Vec<&'a str>,
+    work_kind: WorkKindInput,
+    states: Vec<ProviderStateInput>,
     draft_policy: DraftPolicyInput,
     traversal_mode: TraversalModeInput,
     page_size: u32,
@@ -77,11 +96,11 @@ struct SelectionInput<'a> {
 #[derive(Debug, Serialize)]
 struct SelectionDocument {
     schema_version: u32,
-    provider_kind: String,
+    provider_kind: ProviderKindInput,
     provider_instance: String,
     collection: String,
-    work_kind: String,
-    states: Vec<String>,
+    work_kind: WorkKindInput,
+    states: Vec<ProviderStateInput>,
     draft_policy: String,
     coverage: CoverageIdentity,
 }
@@ -99,32 +118,47 @@ enum CoverageIdentity {
 
 #[derive(Serialize)]
 struct OpaqueQueryDocument {
-    provider_kind: String,
+    provider_kind: ProviderKindInput,
     provider_instance: String,
     collection: String,
     query: String,
 }
 
-fn canonical_symbol(value: &str, label: &str) -> Result<String, String> {
+fn canonical_collection_component(value: &str, label: &str) -> Result<String, String> {
     if value.is_empty()
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
     {
         return Err(format!(
-            "{label} must be a non-empty canonical ASCII symbol"
+            "{label} must be a non-empty canonical ASCII repository component"
         ));
     }
     Ok(value.to_ascii_lowercase())
 }
 
 fn canonical_host(value: &str) -> Result<String, String> {
-    if value.is_empty()
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.'))
-    {
+    let value = value.strip_suffix('.').unwrap_or(value);
+    if value.is_empty() {
         return Err("provider instance must be a canonical host name".to_string());
+    }
+    for label in value.split('.') {
+        if label.is_empty()
+            || label.len() > 63
+            || !label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            || !label
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+            || !label
+                .as_bytes()
+                .last()
+                .is_some_and(u8::is_ascii_alphanumeric)
+        {
+            return Err("provider instance must be a canonical host name".to_string());
+        }
     }
     Ok(value.to_ascii_lowercase())
 }
@@ -147,8 +181,8 @@ fn canonical_collection(value: &str) -> Result<String, String> {
     if repository.contains('/') {
         return Err("collection must contain exactly one `/` separator".to_string());
     }
-    let owner = canonical_symbol(owner, "collection owner")?;
-    let repository = canonical_symbol(repository, "collection repository")?;
+    let owner = canonical_collection_component(owner, "collection owner")?;
+    let repository = canonical_collection_component(repository, "collection repository")?;
     Ok(format!("{owner}/{repository}"))
 }
 
@@ -157,16 +191,13 @@ fn selection_document(input: &SelectionInput<'_>) -> Result<SelectionDocument, S
         return Err("page size must be positive".to_string());
     }
 
-    let provider_kind = canonical_symbol(input.provider_kind, "provider kind")?;
     let provider_instance = canonical_host(input.provider_instance)?;
     let collection = canonical_collection(input.collection)?;
-    let work_kind = canonical_symbol(input.work_kind, "work kind")?;
 
     let mut states = BTreeSet::new();
-    for raw_state in &input.states {
-        let state = canonical_symbol(raw_state, "provider state")?;
-        if !states.insert(state.clone()) {
-            return Err(format!("duplicate provider state `{state}`"));
+    for state in &input.states {
+        if !states.insert(*state) {
+            return Err(format!("duplicate provider state `{state:?}`"));
         }
     }
     if states.is_empty() {
@@ -193,10 +224,10 @@ fn selection_document(input: &SelectionInput<'_>) -> Result<SelectionDocument, S
 
     Ok(SelectionDocument {
         schema_version: SELECTION_SCHEMA_VERSION,
-        provider_kind,
+        provider_kind: input.provider_kind,
         provider_instance,
         collection,
-        work_kind,
+        work_kind: input.work_kind,
         states: states.into_iter().collect(),
         draft_policy: input.draft_policy.as_str().to_string(),
         coverage,
@@ -219,7 +250,7 @@ fn selection_identity(input: &SelectionInput<'_>) -> Result<String, String> {
 
 fn opaque_query_identity(input: &SelectionInput<'_>, query: &str) -> Result<String, String> {
     digest(&OpaqueQueryDocument {
-        provider_kind: canonical_symbol(input.provider_kind, "provider kind")?,
+        provider_kind: input.provider_kind,
         provider_instance: canonical_host(input.provider_instance)?,
         collection: canonical_collection(input.collection)?,
         query: canonical_query_label(query)?,
@@ -228,11 +259,11 @@ fn opaque_query_identity(input: &SelectionInput<'_>, query: &str) -> Result<Stri
 
 fn baseline() -> SelectionInput<'static> {
     SelectionInput {
-        provider_kind: "github",
+        provider_kind: ProviderKindInput::Github,
         provider_instance: "github.com",
         collection: "teamleaderleo/cultist",
-        work_kind: "pull_request",
-        states: vec!["open"],
+        work_kind: WorkKindInput::PullRequest,
+        states: vec![ProviderStateInput::Open],
         draft_policy: DraftPolicyInput::Include,
         traversal_mode: TraversalModeInput::Exhaustive,
         page_size: 100,
@@ -292,15 +323,14 @@ fn provider_collection_and_instance_are_part_of_population_identity() {
 }
 
 #[test]
-fn provider_scope_case_and_unordered_state_order_are_canonical() {
+fn provider_scope_case_trailing_dot_and_unordered_states_are_canonical() {
     let mut first = baseline();
-    first.states = vec!["open", "closed"];
+    first.states = vec![ProviderStateInput::Open, ProviderStateInput::Closed];
 
     let mut second = baseline();
-    second.provider_kind = "GitHub";
-    second.provider_instance = "GITHUB.COM";
+    second.provider_instance = "GITHUB.COM.";
     second.collection = "TeamLeaderLeo/Cultist";
-    second.states = vec!["CLOSED", "OPEN"];
+    second.states = vec![ProviderStateInput::Closed, ProviderStateInput::Open];
 
     assert_eq!(
         selection_identity(&first).unwrap(),
@@ -312,7 +342,7 @@ fn provider_scope_case_and_unordered_state_order_are_canonical() {
 fn materially_different_selected_states_change_identity() {
     let open_only = baseline();
     let mut open_and_closed = baseline();
-    open_and_closed.states = vec!["open", "closed"];
+    open_and_closed.states = vec![ProviderStateInput::Open, ProviderStateInput::Closed];
 
     assert_ne!(
         selection_identity(&open_only).unwrap(),
@@ -399,7 +429,7 @@ fn malformed_scope_coverage_and_duplicate_states_fail_closed() {
     assert!(selection_identity(&malformed_host).is_err());
 
     let mut duplicate_states = baseline();
-    duplicate_states.states = vec!["open", "OPEN"];
+    duplicate_states.states = vec![ProviderStateInput::Open, ProviderStateInput::Open];
     let error = selection_identity(&duplicate_states).unwrap_err();
     assert!(error.contains("duplicate provider state"));
 
