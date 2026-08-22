@@ -39,19 +39,20 @@ jobs:
                   if claim.get("kind") == "unknown":
                       unknowns.append(claim.get("message"))
 
-          assert len(inventory["active_work"]) == 5, inventory["active_work"]
+          assert len(inventory["active_work"]) == 7, inventory["active_work"]
+          assert len(inventory["current"]["changed_paths"]) == 2
           assert collisions == [], collisions
           assert explicit == [], explicit
 
           receipt = {
-              "supplied_work_items": 5,
+              "supplied_work_items": 7,
               "collisions": collisions,
               "explicit_edges": inventory["coordination_edges"],
               "unknowns": unknowns,
               "next_action_changed": False,
-              "consequence": "implement a clean current-parent #648 single-head cutover/risk-execution candidate; keep closed #696 and #702 as disposable historical evidence only",
-              "semantic_pressure_case": "closed WIP carriers answer parts of the lane but are excluded from active membership; zero open-path overlap does not establish semantic independence",
-              "provider_membership_note": "fresh provider refresh supplied exactly the five currently open Quarry PRs after #671 merged and #685/#696/#702 closed",
+              "consequence": "implement the two-file current-parent #648 single-head cutover/risk-execution candidate; keep closed #696/#702 as historical WIP evidence only",
+              "semantic_pressure_case": "provider membership changed from five to seven while main stayed fixed; closed WIP carriers remain evidence rather than active delivery candidates",
+              "provider_membership_note": "fresh refresh replaced closed #705 with new #708/#709/#710 before the exact-path preflight",
           }
           Path("/tmp/quarry-sable-648-cutover-preflight-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
           print(json.dumps(receipt, indent=2))
