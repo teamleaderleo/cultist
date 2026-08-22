@@ -78,6 +78,25 @@ impl OrderDirectionInput {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TieBreakFieldInput {
+    LocalWorkNumber,
+}
+
+impl TieBreakFieldInput {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalWorkNumber => "local_work_number",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TieBreakInput {
+    field: TieBreakFieldInput,
+    direction: OrderDirectionInput,
+}
+
 #[derive(Clone, Debug)]
 struct SelectionInput<'a> {
     provider_kind: ProviderKindInput,
@@ -91,6 +110,7 @@ struct SelectionInput<'a> {
     max_items: Option<u32>,
     order_field: OrderFieldInput,
     order_direction: OrderDirectionInput,
+    tie_break: Option<TieBreakInput>,
 }
 
 #[derive(Debug, Serialize)]
@@ -113,6 +133,8 @@ enum CoverageIdentity {
         max_items: u32,
         order_field: String,
         order_direction: String,
+        tie_break_field: String,
+        tie_break_direction: String,
     },
 }
 
@@ -204,22 +226,32 @@ fn selection_document(input: &SelectionInput<'_>) -> Result<SelectionDocument, S
         return Err("selection contract must contain at least one provider state".to_string());
     }
 
-    let coverage = match (input.traversal_mode, input.max_items) {
-        (TraversalModeInput::Exhaustive, None) => CoverageIdentity::Exhaustive,
-        (TraversalModeInput::Exhaustive, Some(_)) => {
+    let coverage = match (input.traversal_mode, input.max_items, input.tie_break) {
+        (TraversalModeInput::Exhaustive, None, None) => CoverageIdentity::Exhaustive,
+        (TraversalModeInput::Exhaustive, Some(_), _) => {
             return Err("exhaustive traversal must not declare max_items".to_string());
         }
-        (TraversalModeInput::Bounded, None) => {
+        (TraversalModeInput::Exhaustive, None, Some(_)) => {
+            return Err("exhaustive traversal must not declare a tie-break".to_string());
+        }
+        (TraversalModeInput::Bounded, None, _) => {
             return Err("bounded traversal requires max_items".to_string());
         }
-        (TraversalModeInput::Bounded, Some(0)) => {
+        (TraversalModeInput::Bounded, Some(0), _) => {
             return Err("bounded max_items must be positive".to_string());
         }
-        (TraversalModeInput::Bounded, Some(max_items)) => CoverageIdentity::Bounded {
-            max_items,
-            order_field: input.order_field.as_str().to_string(),
-            order_direction: input.order_direction.as_str().to_string(),
-        },
+        (TraversalModeInput::Bounded, Some(_), None) => {
+            return Err("bounded traversal requires a deterministic tie-break".to_string());
+        }
+        (TraversalModeInput::Bounded, Some(max_items), Some(tie_break)) => {
+            CoverageIdentity::Bounded {
+                max_items,
+                order_field: input.order_field.as_str().to_string(),
+                order_direction: input.order_direction.as_str().to_string(),
+                tie_break_field: tie_break.field.as_str().to_string(),
+                tie_break_direction: tie_break.direction.as_str().to_string(),
+            }
+        }
     };
 
     Ok(SelectionDocument {
@@ -270,6 +302,7 @@ fn baseline() -> SelectionInput<'static> {
         max_items: None,
         order_field: OrderFieldInput::UpdatedAt,
         order_direction: OrderDirectionInput::Desc,
+        tie_break: None,
     }
 }
 
@@ -277,6 +310,10 @@ fn bounded(max_items: u32) -> SelectionInput<'static> {
     let mut input = baseline();
     input.traversal_mode = TraversalModeInput::Bounded;
     input.max_items = Some(max_items);
+    input.tie_break = Some(TieBreakInput {
+        field: TieBreakFieldInput::LocalWorkNumber,
+        direction: OrderDirectionInput::Asc,
+    });
     input
 }
 
@@ -390,12 +427,17 @@ fn bounded_transport_page_size_does_not_change_selection_identity() {
 }
 
 #[test]
-fn bounded_population_limit_and_order_are_selection_relevant() {
+fn bounded_population_limit_primary_order_and_tie_break_are_selection_relevant() {
     let first = bounded(100);
     let different_limit = bounded(50);
-    let mut different_order = first.clone();
-    different_order.order_field = OrderFieldInput::CreatedAt;
-    different_order.order_direction = OrderDirectionInput::Asc;
+    let mut different_primary_order = first.clone();
+    different_primary_order.order_field = OrderFieldInput::CreatedAt;
+    different_primary_order.order_direction = OrderDirectionInput::Asc;
+    let mut different_tie_break = first.clone();
+    different_tie_break.tie_break = Some(TieBreakInput {
+        field: TieBreakFieldInput::LocalWorkNumber,
+        direction: OrderDirectionInput::Desc,
+    });
 
     assert_ne!(
         selection_identity(&first).unwrap(),
@@ -403,7 +445,11 @@ fn bounded_population_limit_and_order_are_selection_relevant() {
     );
     assert_ne!(
         selection_identity(&first).unwrap(),
-        selection_identity(&different_order).unwrap()
+        selection_identity(&different_primary_order).unwrap()
+    );
+    assert_ne!(
+        selection_identity(&first).unwrap(),
+        selection_identity(&different_tie_break).unwrap()
     );
 }
 
@@ -437,12 +483,22 @@ fn malformed_scope_coverage_and_duplicate_states_fail_closed() {
     exhaustive_with_bound.max_items = Some(100);
     assert!(selection_identity(&exhaustive_with_bound).is_err());
 
+    let mut exhaustive_with_tie_break = baseline();
+    exhaustive_with_tie_break.tie_break = Some(TieBreakInput {
+        field: TieBreakFieldInput::LocalWorkNumber,
+        direction: OrderDirectionInput::Asc,
+    });
+    assert!(selection_identity(&exhaustive_with_tie_break).is_err());
+
     let mut bounded_without_bound = baseline();
     bounded_without_bound.traversal_mode = TraversalModeInput::Bounded;
     assert!(selection_identity(&bounded_without_bound).is_err());
 
-    let mut zero_bound = baseline();
-    zero_bound.traversal_mode = TraversalModeInput::Bounded;
+    let mut bounded_without_tie_break = bounded(100);
+    bounded_without_tie_break.tie_break = None;
+    assert!(selection_identity(&bounded_without_tie_break).is_err());
+
+    let mut zero_bound = bounded(100);
     zero_bound.max_items = Some(0);
     assert!(selection_identity(&zero_bound).is_err());
 }
