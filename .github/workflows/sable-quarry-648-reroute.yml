@@ -1,0 +1,68 @@
+name: Sable Quarry 648 Reroute
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    if: github.head_ref == 'dogfood/sable-quarry-648-reroute-20260822'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run reroute preflight
+        run: |
+          set -euo pipefail
+          inventory="research/fixtures/quarry-sable-648-reroute-2026-08-22.json"
+          cargo run --quiet -- preflight --inventory "$inventory" --format json . \
+            | tee /tmp/quarry-sable-648-reroute.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          inventory = json.loads(Path("research/fixtures/quarry-sable-648-reroute-2026-08-22.json").read_text())
+          report = json.loads(Path("/tmp/quarry-sable-648-reroute.json").read_text())
+          findings = report.get("findings", [])
+          collisions = [f for f in findings if f.get("kind") == "preflight-inventory-path-overlap"]
+          explicit = [f for f in findings if f.get("kind") == "preflight-explicit-coordination"]
+          unknowns = []
+          for claim in report.get("claims", []):
+              if claim.get("kind") == "unknown":
+                  unknowns.append(claim.get("message"))
+          for finding in findings:
+              for claim in finding.get("claims", []):
+                  if claim.get("kind") == "unknown":
+                      unknowns.append(claim.get("message"))
+
+          assert len(inventory["active_work"]) == 8
+          assert collisions == [], collisions
+          assert len(explicit) == 1, explicit
+          assert explicit[0]["claims"][0]["message"].find("supersedes") >= 0, explicit
+
+          receipt = {
+              "supplied_work_items": 8,
+              "collisions": [],
+              "explicit_edges": inventory["coordination_edges"],
+              "unknowns": unknowns,
+              "next_action_changed": True,
+              "consequence": "review #696 instead of implementing duplicate #648 persistence; preserve #685 downstream sequencing",
+              "semantic_pressure_case": "same #648 authority lane lives in different files, so zero path overlap did not imply independence",
+              "provider_membership_note": "fresh refresh replaced closed #693/#684 with new #695/#696 after the previous preflight",
+          }
+          Path("/tmp/quarry-sable-648-reroute-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          print(json.dumps(receipt, indent=2))
+          PY
+      - name: Upload reroute receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarry-sable-648-reroute
+          path: |
+            research/fixtures/quarry-sable-648-reroute-2026-08-22.json
+            /tmp/quarry-sable-648-reroute.json
+            /tmp/quarry-sable-648-reroute-receipt.json
