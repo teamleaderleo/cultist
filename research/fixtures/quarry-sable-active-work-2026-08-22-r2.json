@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "source": "github_connector_open_pr_snapshot",
+  "observed_at": "2026-08-22T18:32:09Z",
+  "current": {
+    "id": "sable-review-649-prospective-focus",
+    "kind": "review_focus",
+    "title": "Sable exact target admission and prospective evidence focus",
+    "url": "https://github.com/Coreys-Quarry/quarry/pull/649",
+    "head_ref": "review/649-prospective-focus",
+    "head_sha": "aeed7d06fc794048417601cd60a38f43d8debc7f",
+    "updated_at": "2026-08-22T18:16:34Z",
+    "draft": false,
+    "changed_paths": [
+      "src/quarry/exact_target_admission.py",
+      "src/quarry/btc_momentum_prospective.py",
+      "tests/test_exact_target_admission.py",
+      "tests/test_btc_momentum_prospective.py"
+    ]
+  },
+  "active_work": [
+    {
+      "id": "#691",
+      "kind": "pull_request",
+      "title": "feat: add transparent corporate event study baseline",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/691",
+      "head_ref": "research/659-corporate-event-study-v1",
+      "head_sha": "4de36d57c01a0032fc4f23c56c285ed0bd811961",
+      "updated_at": "2026-08-22T18:31:21Z",
+      "draft": false,
+      "changed_paths": [
+        "research/programs/corporate-event-study-659-v1.json",
+        "research/results/corporate-event-study-659-v1-data-blocked.json",
+        "src/quarry/company_event_study.py",
+        "tests/test_company_event_study.py"
+      ]
+    },
+    {
+      "id": "#690",
+      "kind": "pull_request",
+      "title": "[dogfood] Echo one-shot Cultist preflight carrier",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/690",
+      "head_ref": "echo/cultist-preflight-20260823",
+      "head_sha": "164a34115421bd7adb6d69d55643dc3094e85733",
+      "updated_at": "2026-08-22T18:31:13Z",
+      "draft": true,
+      "changed_paths": [
+        ".github/workflows/echo-cultist-preflight.yml"
+      ]
+    },
+    {
+      "id": "#689",
+      "kind": "pull_request",
+      "title": "research: admit frozen #645 BTC hourly source",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/689",
+      "head_ref": "agent/645-hourly-btc-campaign-20260823",
+      "head_sha": "f4d3881e3b8c75a44f97cc3231d12bea28904865",
+      "updated_at": "2026-08-22T18:30:56Z",
+      "draft": true,
+      "changed_paths": [
+        ".github/workflows/hourly-btc-source.yml",
+        "configs/research/hourly_btc_baselines_v1.json",
+        "src/quarry/hourly_source.py",
+        "tests/test_hourly_source.py"
+      ]
+    },
+    {
+      "id": "#688",
+      "kind": "pull_request",
+      "title": "research: recompose alpha with owned result sources",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/688",
+      "head_ref": "research/563-combined-alpha-owned-source",
+      "head_sha": "c432880fd52e9a76b64bb224917b9c32bb09a3f3",
+      "updated_at": "2026-08-22T18:30:31Z",
+      "draft": true,
+      "changed_paths": [
+        ".github/workflows/research-563-combined-alpha-owned-source.yml",
+        "scripts/research_563_combined_alpha_composition.py",
+        "scripts/research_563_combined_alpha_owned_source.py",
+        "src/quarry/_exact_regime_attribution_receipts.py"
+      ]
+    },
+    {
+      "id": "#686",
+      "kind": "pull_request",
+      "title": "research: add #663 deterministic news-cycle novelty baseline",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/686",
+      "head_ref": "codex/issue-663-news-cycle-novelty-baseline",
+      "head_sha": "b2ae98130994b7a2e30ee4169f33313cb674655d",
+      "updated_at": "2026-08-22T18:29:00Z",
+      "draft": false,
+      "changed_paths": [
+        "research/news_cycle/issue_663_inventory.json",
+        "src/quarry/news_cycle.py",
+        "tests/test_news_cycle.py"
+      ]
+    },
+    {
+      "id": "#685",
+      "kind": "pull_request",
+      "title": "WIP carrier: harden #633 frozen prospective BTC momentum ledger",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/685",
+      "head_ref": "wip/633-prospective-hardening-current",
+      "head_sha": "a6f35d47ec9487899d719627b95cc79eb5cedb6f",
+      "updated_at": "2026-08-22T18:28:59Z",
+      "draft": false,
+      "changed_paths": [
+        "src/quarry/btc_momentum_prospective.py",
+        "src/quarry/btc_momentum_prospective_campaign.py",
+        "tests/test_btc_momentum_prospective.py",
+        "tests/test_btc_momentum_prospective_campaign.py"
+      ]
+    },
+    {
+      "id": "#684",
+      "kind": "pull_request",
+      "title": "Research carrier: #661 daily volatility compression pilot",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/684",
+      "head_ref": "research/661-daily-compression-pilot-r2",
+      "head_sha": "519640d38f5de8341d99ab798ce138e6f172b33b",
+      "updated_at": "2026-08-22T18:27:31Z",
+      "draft": false,
+      "changed_paths": [
+        "tests/test_research_661_carrier.py"
+      ]
+    },
+    {
+      "id": "#683",
+      "kind": "pull_request",
+      "title": "[research] #658 frozen defense replenishment event-study carrier",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/683",
+      "head_ref": "research/658-defense-replenishment-event-study-v1",
+      "head_sha": "45e5c8e1ec21f1dda03f9cf23b2b81e19518bb80",
+      "updated_at": "2026-08-22T18:30:41Z",
+      "draft": false,
+      "changed_paths": [
+        "tests/test_research_658_carrier.py",
+        "tests/test_research_658_receipt.py"
+      ]
+    },
+    {
+      "id": "#682",
+      "kind": "pull_request",
+      "title": "research: retain #656 memory read-through data blocker",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/682",
+      "head_ref": "research/656-mu-memory-readthrough-v1-current",
+      "head_sha": "5bd7087e5719dd8123ffaf0a72affbb5cf895cc0",
+      "updated_at": "2026-08-22T18:31:18Z",
+      "draft": false,
+      "changed_paths": [
+        "research/experiments/semiconductor-memory-readthrough-v1-data-blocker.json",
+        "research/programs/semiconductor-memory-readthrough-v1.json",
+        "tests/test_semiconductor_memory_readthrough_program.py"
+      ]
+    },
+    {
+      "id": "#671",
+      "kind": "pull_request",
+      "title": "feat: retain durable exact research abstain decisions",
+      "url": "https://github.com/Coreys-Quarry/quarry/pull/671",
+      "head_ref": "kiln/633-durable-abstain-final",
+      "head_sha": "0a95dcd52e282bbeabfbcd9662c44f472ca029f5",
+      "updated_at": "2026-08-22T18:26:35Z",
+      "draft": false,
+      "changed_paths": [
+        "src/quarry/_exact_research_engine.py",
+        "src/quarry/_exact_research_execution.py",
+        "src/quarry/exact_research_contract.py",
+        "src/quarry/exact_research_result_artifact.py",
+        "tests/test_exact_research_abstain.py",
+        "tests/test_exact_research_result_artifact_abstain.py"
+      ]
+    }
+  ],
+  "coordination_edges": [
+    {
+      "kind": "depends_on",
+      "from": "sable-review-649-prospective-focus",
+      "to": "#671",
+      "source": "provider:quarry-pr-671-body-direct-prerequisite-for-durable-633-evidence"
+    }
+  ]
+}
