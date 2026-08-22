@@ -278,6 +278,12 @@ def edge_involves_current(inventory: dict[str, object], edge: dict[str, object])
     return str(edge.get("from", "")) == current_id or str(edge.get("to", "")) == current_id
 
 
+def quiet_status_line(metadata_note: str | None = None) -> str:
+    if metadata_note:
+        return "Coordination metadata: UNKNOWN; direct path evidence found no overlap."
+    return "No active-work coordination signal worth surfacing."
+
+
 def quiet_summary(
     inventory: dict[str, object],
     metadata_note: str | None = None,
@@ -287,12 +293,21 @@ def quiet_summary(
         "",
         f"Observed `{inventory['observed_at']}` from `{inventory['source']}`.",
         "",
-        "No active-work coordination signal worth surfacing.",
+        quiet_status_line(metadata_note),
         "",
-        "> Advisory only. Disjoint paths and absent reviewed metadata edges do not prove semantic independence.",
     ]
     if metadata_note:
-        lines.extend(["", f"> {metadata_note}"])
+        lines.extend(
+            [
+                "> Direct path evidence is quiet; reviewed coordination metadata remains unresolved because its analyzer did not complete.",
+                "",
+                f"> {metadata_note}",
+            ]
+        )
+    else:
+        lines.append(
+            "> Advisory only. Disjoint paths and absent reviewed metadata edges do not prove semantic independence."
+        )
     lines.append("")
     return "\n".join(lines)
 
@@ -434,7 +449,7 @@ def main() -> None:
 
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not direct_overlap and not relevant_edges:
-        print("No active-work coordination signal worth surfacing.")
+        print(quiet_status_line(metadata_note))
         print(
             f"timing: inventory {inventory_seconds:.2f}s; "
             f"coordination {coordination_seconds:.2f}s; product 0.00s"
