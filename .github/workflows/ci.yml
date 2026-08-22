@@ -73,6 +73,12 @@ jobs:
           python scripts/external_github_reference_guard.py \
             --repository "$GITHUB_REPOSITORY" \
             --base "$CULTIST_BASE"
+      - name: Active work heads-up adapter controls
+        run: |
+          python -m py_compile \
+            scripts/active_work_heads_up_ci.py \
+            scripts/active_work_heads_up_ci_test.py
+          python scripts/active_work_heads_up_ci_test.py
       - name: Active work heads-up
         if: github.event_name == 'pull_request'
         continue-on-error: true
