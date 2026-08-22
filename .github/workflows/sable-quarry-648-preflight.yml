@@ -1,0 +1,73 @@
+name: Sable Quarry 648 Preflight
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    if: github.head_ref == 'dogfood/sable-quarry-648-preflight-20260822'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run product preflight and retain receipt
+        run: |
+          set -euo pipefail
+          inventory="research/fixtures/quarry-sable-648-active-work-2026-08-22.json"
+          cargo run --quiet -- preflight --inventory "$inventory" --format json . \
+            | tee /tmp/quarry-sable-648-preflight.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          inventory = json.loads(Path("research/fixtures/quarry-sable-648-active-work-2026-08-22.json").read_text())
+          report = json.loads(Path("/tmp/quarry-sable-648-preflight.json").read_text())
+          findings = report.get("findings", [])
+          collisions = [
+              finding for finding in findings
+              if finding.get("kind") == "preflight-inventory-path-overlap"
+          ]
+          explicit = [
+              finding for finding in findings
+              if finding.get("kind") == "preflight-explicit-coordination"
+          ]
+          unknowns = []
+          for claim in report.get("claims", []):
+              if claim.get("kind") == "unknown":
+                  unknowns.append(claim.get("message"))
+          for finding in findings:
+              for claim in finding.get("claims", []):
+                  if claim.get("kind") == "unknown":
+                      unknowns.append(claim.get("message"))
+
+          assert len(inventory["active_work"]) == 8, inventory["active_work"]
+          assert collisions == [], collisions
+          assert len(inventory.get("coordination_edges", [])) == 1
+          assert len(explicit) == 1, explicit
+
+          receipt = {
+              "supplied_work_items": len(inventory["active_work"]),
+              "collisions": [],
+              "explicit_edges": inventory["coordination_edges"],
+              "unknowns": unknowns,
+              "next_action_changed": False,
+              "consequence": "implement #648 ahead of downstream disposable #685; keep #671 as separate #633 prerequisite",
+              "provider_membership_note": "fresh open-PR refresh after #682 merged; eight current Quarry PRs supplied",
+          }
+          Path("/tmp/quarry-sable-648-preflight-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          print(json.dumps(receipt, indent=2))
+          PY
+      - name: Upload preflight receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarry-sable-648-preflight
+          path: |
+            research/fixtures/quarry-sable-648-active-work-2026-08-22.json
+            /tmp/quarry-sable-648-preflight.json
+            /tmp/quarry-sable-648-preflight-receipt.json
