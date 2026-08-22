@@ -76,6 +76,16 @@ mod work_fact_contract {
     pub(super) fn moved_source_identity() -> String {
         fingerprint(&baseline_work(), &[edge("provider:reviewed-metadata")]).unwrap()
     }
+
+    pub(super) fn changed_semantic_edge_identity() -> String {
+        let changed = CoordinationInput {
+            kind: CoordinationKindInput::Blocks,
+            from: "pull/604",
+            to: "pull/608",
+            source: "provider:pull/604",
+        };
+        fingerprint(&baseline_work(), &[changed]).unwrap()
+    }
 }
 
 #[derive(Serialize)]
@@ -208,6 +218,21 @@ fn coordination_provenance_movement_preserves_composed_snapshot_identity() {
     assert_eq!(
         evaluate_snapshot(&required, Some(&current)),
         ApplicabilityStatus::Applies
+    );
+}
+
+#[test]
+fn semantic_coordination_movement_invalidates_composed_snapshot_identity() {
+    let selection = selection_contract::baseline_identity();
+    let required = snapshot_identity(&selection, &work_fact_contract::semantic_edge_identity());
+    let current = snapshot_identity(
+        &selection,
+        &work_fact_contract::changed_semantic_edge_identity(),
+    );
+
+    assert_eq!(
+        evaluate_snapshot(&required, Some(&current)),
+        ApplicabilityStatus::Invalid
     );
 }
 
