@@ -46,7 +46,34 @@ struct WorkItem {
     head_sha: String,
     updated_at: String,
     draft: bool,
+    #[serde(default)]
+    activity: WorkActivity,
     changed_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum WorkActivity {
+    #[default]
+    ConfirmedActive,
+    Preparation,
+    Unresolved,
+}
+
+impl WorkActivity {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ConfirmedActive => "confirmed_active",
+            Self::Preparation => "preparation",
+            Self::Unresolved => "unresolved",
+        }
+    }
+}
+
+impl WorkItem {
+    fn activity(&self) -> WorkActivity {
+        self.activity
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Deserialize)]
@@ -167,44 +194,23 @@ fn analyze_inventory(
         for path in current_paths.intersection(&other_paths) {
             direct_overlap_count += 1;
             let display = path.to_string_lossy().into_owned();
-            analysis.findings.push(
-                Finding::new(
-                    "preflight-inventory-path-overlap",
-                    "Active-change path overlap",
-                )
-                .at(Location::new(display.clone(), None))
-                .with_claim(
-                    Claim::new(
-                        ClaimKind::Observed,
-                        format!(
-                            "The admitted inventory records both `{}` and `{}` modifying `{display}`.",
-                            inventory.current.id, work.id
-                        ),
-                    )
-                    .with_evidence(Evidence::new(format!(
-                        "Other active work: `{}` — `{}` at head `{}` (updated `{}`).",
-                        work.id, work.title, work.head_sha, work.updated_at
-                    )))
-                    .with_evidence(Evidence::new(format!("Provider reference: `{}`.", work.url))),
-                )
-                .with_question(
-                    "Is there anything worth reconciling before continuing on this path?",
-                ),
-            );
+            analysis
+                .findings
+                .push(path_overlap_finding(&inventory.current, work, display));
         }
     }
 
     analysis.claims.push(Claim::new(
         ClaimKind::Observed,
         format!(
-            "Examined {candidates_examined} active candidate(s) and excluded {self_candidates_excluded} self candidate(s)."
+            "Examined {candidates_examined} supplied work candidate(s) and excluded {self_candidates_excluded} self candidate(s)."
         ),
     ));
 
     if direct_overlap_count == 0 {
         analysis.claims.push(Claim::new(
             ClaimKind::Observed,
-            "The admitted inventory records no direct path overlap between the current work and the other active work in the selected scope.",
+            "The admitted inventory records no direct path overlap between the current work and the other supplied work in the selected scope.",
         ));
     }
 
@@ -243,8 +249,12 @@ fn analyze_inventory(
                 edge.source
             )))
             .with_evidence(Evidence::new(format!(
-                "Related active work: `{}` — `{}` at head `{}` (updated `{}`).",
-                other.id, other.title, other.head_sha, other.updated_at
+                "Related supplied work: `{}` — `{}` at head `{}` (updated `{}`, activity={}).",
+                other.id,
+                other.title,
+                other.head_sha,
+                other.updated_at,
+                other.activity().as_str()
             ))),
         );
 
@@ -256,6 +266,10 @@ fn analyze_inventory(
                     inventory.current.id
                 ),
             ));
+        }
+
+        if other.activity() == WorkActivity::Unresolved {
+            finding = finding.with_claim(activity_unknown_claim(other));
         }
 
         finding = finding
@@ -276,7 +290,7 @@ fn analyze_inventory(
 
     analysis.claims.push(Claim::new(
         ClaimKind::Unknown,
-        "No direct path overlap is not evidence that active work is semantically independent.",
+        "No direct path overlap is not evidence that supplied work is semantically independent.",
     ));
     analysis.claims.push(Claim::new(
         ClaimKind::Unknown,
@@ -284,6 +298,59 @@ fn analyze_inventory(
     ));
 
     analysis
+}
+
+fn path_overlap_finding(current: &WorkItem, other: &WorkItem, display: String) -> Finding {
+    let observed = Claim::new(
+        ClaimKind::Observed,
+        format!(
+            "The admitted inventory records both `{}` and `{}` modifying `{display}`.",
+            current.id, other.id
+        ),
+    )
+    .with_evidence(Evidence::new(format!(
+        "Other supplied work: `{}` — `{}` at head `{}` (updated `{}`, activity={}).",
+        other.id,
+        other.title,
+        other.head_sha,
+        other.updated_at,
+        other.activity().as_str()
+    )))
+    .with_evidence(Evidence::new(format!(
+        "Provider reference: `{}`.",
+        other.url
+    )));
+
+    if other.activity() == WorkActivity::Unresolved {
+        Finding::new(
+            "preflight-inventory-path-overlap-activity-unknown",
+            "Path overlap with unresolved activity",
+        )
+        .at(Location::new(display, None))
+        .with_claim(observed)
+        .with_claim(activity_unknown_claim(other))
+        .with_question(
+            "Refresh or resolve current activity before treating this path overlap as an active collision.",
+        )
+    } else {
+        Finding::new(
+            "preflight-inventory-path-overlap",
+            "Active-change path overlap",
+        )
+        .at(Location::new(display, None))
+        .with_claim(observed)
+        .with_question("Is there anything worth reconciling before continuing on this path?")
+    }
+}
+
+fn activity_unknown_claim(work: &WorkItem) -> Claim {
+    Claim::new(
+        ClaimKind::Unknown,
+        format!(
+            "The admitted inventory does not establish that `{}` is currently active or owned.",
+            work.id
+        ),
+    )
 }
 
 fn same_work(current: &WorkItem, other: &WorkItem) -> bool {
@@ -515,6 +582,17 @@ mod tests {
         })
     }
 
+    fn work_with_activity(
+        id: &str,
+        sha: &str,
+        paths: &[&str],
+        activity: &str,
+    ) -> serde_json::Value {
+        let mut value = work(id, sha, paths);
+        value["activity"] = serde_json::json!(activity);
+        value
+    }
+
     fn document(
         current: serde_json::Value,
         active_work: Vec<serde_json::Value>,
@@ -657,6 +735,130 @@ mod tests {
             .find(|finding| finding.kind == "preflight-inventory-path-overlap")
             .unwrap();
         assert_eq!(overlap.claims[0].kind, ClaimKind::Observed);
+    }
+
+    #[test]
+    fn confirmed_active_overlap_keeps_active_collision_finding() {
+        let current = work("#1", "aaa", &["src/a.rs"]);
+        let other = work_with_activity("#2", "bbb", &["src/a.rs"], "confirmed_active");
+        let inventory = parse(document(current, vec![other], Vec::new())).unwrap();
+        let analysis = analyze_inventory(Path::new("/repo"), &inventory, None);
+
+        assert!(analysis.findings.iter().any(|finding| {
+            finding.kind == "preflight-inventory-path-overlap"
+                && finding.title == "Active-change path overlap"
+        }));
+    }
+
+    #[test]
+    fn preparation_overlap_keeps_active_collision_finding() {
+        let current = work("#1", "aaa", &["src/a.rs"]);
+        let other = work_with_activity("#2", "bbb", &["src/a.rs"], "preparation");
+        let inventory = parse(document(current, vec![other], Vec::new())).unwrap();
+        let analysis = analyze_inventory(Path::new("/repo"), &inventory, None);
+
+        assert!(analysis.findings.iter().any(|finding| {
+            finding.kind == "preflight-inventory-path-overlap"
+                && finding.title == "Active-change path overlap"
+        }));
+    }
+
+    #[test]
+    fn unresolved_overlap_preserves_path_fact_and_activity_unknown() {
+        let current = work("#1", "aaa", &["tests/regression.rs"]);
+        let other = work_with_activity("branch-old", "bbb", &["tests/regression.rs"], "unresolved");
+        let inventory = parse(document(current, vec![other], Vec::new())).unwrap();
+        let analysis = analyze_inventory(Path::new("/repo"), &inventory, None);
+
+        assert!(
+            analysis
+                .findings
+                .iter()
+                .all(|finding| { finding.kind != "preflight-inventory-path-overlap" })
+        );
+        let finding = analysis
+            .findings
+            .iter()
+            .find(|finding| finding.kind == "preflight-inventory-path-overlap-activity-unknown")
+            .unwrap();
+        assert_eq!(finding.title, "Path overlap with unresolved activity");
+        assert!(finding.claims.iter().any(|claim| {
+            claim.kind == ClaimKind::Observed
+                && claim.message.contains("modifying `tests/regression.rs`")
+        }));
+        assert!(finding.claims.iter().any(|claim| {
+            claim.kind == ClaimKind::Unknown && claim.message.contains("currently active or owned")
+        }));
+        assert!(
+            finding
+                .question
+                .as_deref()
+                .is_some_and(|question| question.contains("Refresh or resolve current activity"))
+        );
+    }
+
+    #[test]
+    fn unresolved_disjoint_work_stays_quiet() {
+        let current = work("#1", "aaa", &["src/a.rs"]);
+        let other = work_with_activity("branch-old", "bbb", &["src/b.rs"], "unresolved");
+        let inventory = parse(document(current, vec![other], Vec::new())).unwrap();
+        let analysis = analyze_inventory(Path::new("/repo"), &inventory, None);
+
+        assert!(analysis.findings.is_empty());
+    }
+
+    #[test]
+    fn kind_spelling_alone_does_not_make_activity_unresolved() {
+        let current = work("#1", "aaa", &["src/a.rs"]);
+        let mut other = work("#2", "bbb", &["src/a.rs"]);
+        other["kind"] = serde_json::json!("branch_observation_ambiguous");
+        let inventory = parse(document(current, vec![other], Vec::new())).unwrap();
+        let analysis = analyze_inventory(Path::new("/repo"), &inventory, None);
+
+        assert!(
+            analysis
+                .findings
+                .iter()
+                .any(|finding| { finding.kind == "preflight-inventory-path-overlap" })
+        );
+    }
+
+    #[test]
+    fn explicit_coordination_survives_unresolved_activity() {
+        let current = work("#1", "aaa", &["src/a.rs"]);
+        let other = work_with_activity("#2", "bbb", &["src/b.rs"], "unresolved");
+        let edge = serde_json::json!({
+            "kind": "depends_on",
+            "from": "#1",
+            "to": "#2",
+            "source": "fixture"
+        });
+        let inventory = parse(document(current, vec![other], vec![edge])).unwrap();
+        let analysis = analyze_inventory(Path::new("/repo"), &inventory, None);
+
+        let finding = analysis
+            .findings
+            .iter()
+            .find(|finding| finding.kind == "preflight-explicit-coordination")
+            .unwrap();
+        assert!(finding.claims.iter().any(|claim| {
+            claim.kind == ClaimKind::Unknown && claim.message.contains("currently active or owned")
+        }));
+    }
+
+    #[test]
+    fn rejects_null_activity_state() {
+        let current = work("#1", "aaa", &["src/a.rs"]);
+        let mut other = work("#2", "bbb", &["src/a.rs"]);
+        other["activity"] = serde_json::Value::Null;
+        assert!(parse(document(current, vec![other], Vec::new())).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_activity_state() {
+        let current = work("#1", "aaa", &["src/a.rs"]);
+        let other = work_with_activity("#2", "bbb", &["src/a.rs"], "maybe_active");
+        assert!(parse(document(current, vec![other], Vec::new())).is_err());
     }
 
     #[test]
