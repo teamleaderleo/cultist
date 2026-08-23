@@ -5,17 +5,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 import tempfile
-import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
 API = "https://api.github.com"
-ALIAS_REPOSITORY = "Coreys-Quarry/quarry"
-EXPECTED_CANONICAL_REPOSITORY = "teamleaderleo/quarry"
+CANONICAL_REPOSITORY = "teamleaderleo/quarry"
 PREHOST_QUARRY_MAIN = "1a65f8fe795f615e1f2f2587c1dd2ef341cac08a"
 PREHOST_HEADS = {
     807: "e2aee80bb4c85ce0966eb2e53aaf1ef07a6140a8",
@@ -42,12 +39,10 @@ PREHOST_HEADS = {
 
 
 def _headers() -> dict[str, str]:
-    token = os.environ.get("GH_TOKEN")
-    if not token:
-        raise RuntimeError("GH_TOKEN is required for the hosted provider snapshot")
+    # Quarry is public. Deliberately avoid Cultist's repository-scoped GITHUB_TOKEN here:
+    # the first hosted carrier proved that token cannot resolve the historical Quarry alias.
     return {
         "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "cultist-kestrel-quarry-preflight",
     }
@@ -201,13 +196,7 @@ def _prehost_delta(main_sha: str, work: list[dict[str, object]]) -> dict[str, ob
 
 
 def main() -> None:
-    alias = _get(f"/repos/{ALIAS_REPOSITORY}")
-    if not isinstance(alias, dict):
-        raise RuntimeError("repository response was not an object")
-    canonical = str(alias["full_name"])
-    if canonical.lower() != EXPECTED_CANONICAL_REPOSITORY.lower():
-        raise RuntimeError(f"unexpected canonical Quarry repository: {canonical}")
-
+    canonical = CANONICAL_REPOSITORY
     observed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     quarry_main, work, snapshot_identity = _provider_snapshot(canonical)
     delta = _prehost_delta(quarry_main, work)
@@ -215,7 +204,7 @@ def main() -> None:
     inventory = {
         "schema_version": 1,
         "source": (
-            "Kestrel hosted GitHub provider snapshot; exhaustive open pull requests, "
+            "Kestrel hosted public-GitHub snapshot of canonical Quarry; exhaustive open pull requests, "
             "drafts included; #298/#305/provider_snapshot_composition grammar"
         ),
         "observed_at": observed_at,
@@ -279,6 +268,8 @@ def main() -> None:
     receipt = {
         "callsign": "Kestrel 🦅",
         "canonical_quarry_repository": canonical,
+        "canonical_authority_source": "connected GitHub provider refresh before hosted carrier",
+        "hosted_provider_access": "unauthenticated public canonical GitHub API; repository-scoped Cultist token intentionally unused",
         "quarry_main": quarry_main,
         "cultist_main_under_test": "97843bcdbe356b410d7e7dafd06ff64929117c41",
         "observed_at": observed_at,
@@ -295,7 +286,7 @@ def main() -> None:
             "review applicability and CI disposition are separate provider dimensions outside this inventory",
             "provider state can move after observed_at",
         ],
-        "false_positive_notes": "none observed: comment-only lane produced no path or provider-currentness finding",
+        "false_positive_notes": "none observed if receipt emitted: comment-only lane produced no path or provider-currentness finding",
         "false_negative_notes": "semantic conflicts and unresolved no-PR ownership remain outside path-overlap proof",
         "context_changed_since_prehost_refresh": any(
             [
