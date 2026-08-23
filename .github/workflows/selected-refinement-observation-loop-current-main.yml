@@ -1,0 +1,267 @@
+name: Selected refinement observation loop current main
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/selected-refinement-observation-loop-current-main.yml"
+      - "research/refinement-episodes/cultist-v1.json"
+      - "research/refinement-observation-requirements/cultist-v1.json"
+      - "research/refinement-observation-requirements/oxc-focused-edit-class-v1.json"
+      - "research/discriminator-observations/cultist-v1.json"
+      - "src/refinement_observation_requirement.rs"
+      - "src/observation_frontier.rs"
+      - "src/observation_probe_bridge.rs"
+      - "src/rust_edit_class_source.rs"
+      - "examples/refinement_observation_requirements.rs"
+      - "examples/observation_frontiers.rs"
+      - "examples/observation_probe_plan.rs"
+      - "examples/rust_edit_class_observation.rs"
+      - "tests/selected_refinement_observation_loop.rs"
+
+permissions:
+  contents: read
+
+jobs:
+  selected-oxc-edit-class-loop:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'research/234-selected-refinement-loop-current-main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Cultist
+        uses: actions/checkout@v4
+        with:
+          path: cultist
+
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Build independent readers
+        run: |
+          cargo build --release \
+            --example refinement_observation_requirements \
+            --example observation_frontiers \
+            --example observation_probe_plan \
+            --example rust_edit_class_observation \
+            --manifest-path cultist/Cargo.toml
+
+      - name: Compile selected exact requirement
+        id: requirement
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          request = {
+              "schema_version": 1,
+              "refinements": json.loads(Path("cultist/research/refinement-episodes/cultist-v1.json").read_text()),
+              "mappings": json.loads(Path("cultist/research/refinement-observation-requirements/cultist-v1.json").read_text()),
+          }
+          Path("requirement-request.json").write_text(json.dumps(request))
+          PY
+          "$PWD/cultist/target/release/examples/refinement_observation_requirements" \
+            < requirement-request.json > selected-requirements.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evaluation = json.loads(Path("selected-requirements.json").read_text())
+          selected = next(row for row in evaluation["selected"] if row["episode_id"] == "history/oxc-edit-class-v1")
+          assert selected["candidate_id"] == "syntax-changing-current-cohort", selected
+          assert selected["missing_discriminator_refs"] == [], selected
+          assert len(selected["requirements"]) == 1, selected
+          requirement = selected["requirements"][0]
+          revision = "228e8e0f85c0e7aeded02c5e27fd810004d3b41a"
+          path = "crates/oxc_linter/src/rules.rs"
+          subject = f"oxc-project/oxc@{revision}:{path}"
+          assert requirement == {"discriminator_id": "edit_class", "subject_ref": subject}, requirement
+          Path("oxc-requirement.json").write_text(json.dumps(requirement))
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as out:
+              out.write(f"revision={revision}\n")
+              out.write(f"path={path}\n")
+          PY
+
+      - name: Build withheld observation batch and missing frontier
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          requirement = json.loads(Path("oxc-requirement.json").read_text())
+          batch = json.loads(Path("cultist/research/discriminator-observations/cultist-v1.json").read_text())
+          focused = json.loads(Path("cultist/research/refinement-observation-requirements/oxc-focused-edit-class-v1.json").read_text())
+          assert focused["schema_version"] == 2, focused
+          assert len(focused["observations"]) == 1, focused
+          exact = focused["observations"][0]
+          assert exact["discriminator_id"] == requirement["discriminator_id"], exact
+          assert exact["subject_ref"] == requirement["subject_ref"], exact
+          batch["observations"] = [
+              row
+              for row in batch["observations"]
+              if row["discriminator_id"] != requirement["discriminator_id"]
+          ]
+
+          wrong = json.loads(json.dumps(exact))
+          wrong["observation_id"] = "selected-loop:wrong-path-edit-class"
+          wrong["subject_ref"] = requirement["subject_ref"].replace("/rules.rs", "/other.rs")
+          wrong["source_receipt"] = "research:selected-loop:wrong-path"
+          batch["observations"].append(wrong)
+
+          pinned = json.loads(json.dumps(exact))
+          pinned["observation_id"] = "selected-loop:pinned-head-control"
+          pinned["subject_ref"] = "oxc-project/oxc@8783524015b1e6ff1c39ccf426df0bb07cbbc588:crates/oxc_linter/src/rules.rs"
+          pinned["source_receipt"] = "github-actions:run/32258599172#pinned-head-control"
+          pinned["value_state"] = {"state": "unknown", "reason_ref": "rust-edit-class:anchor-unchanged:pinned-head-control"}
+          batch["observations"].append(pinned)
+          Path("withheld-observations.json").write_text(json.dumps(batch))
+
+          request = {"schema_version": 2, "requirements": [requirement], "observations": batch}
+          Path("missing-frontier-request.json").write_text(json.dumps(request))
+          PY
+          "$PWD/cultist/target/release/examples/observation_frontiers" \
+            < missing-frontier-request.json > missing-frontier.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          receipt = json.loads(Path("missing-frontier.json").read_text())["frontiers"][0]
+          assert receipt["status"] == "missing", receipt
+          assert receipt["current"] == [], receipt
+          assert len(receipt["other_subject"]) == 2, receipt
+          PY
+
+      - name: Checkout pinned Oxc history
+        uses: actions/checkout@v4
+        with:
+          repository: oxc-project/oxc
+          ref: 8783524015b1e6ff1c39ccf426df0bb07cbbc588
+          fetch-depth: 200
+          persist-credentials: false
+          path: target
+
+      - name: Verify focused source coordinate and pinned-head control
+        env:
+          EXPECTED_REVISION: ${{ steps.requirement.outputs.revision }}
+          TARGET_PATH: ${{ steps.requirement.outputs.path }}
+        run: |
+          set -euo pipefail
+          test "$(git -C target rev-parse HEAD)" = "8783524015b1e6ff1c39ccf426df0bb07cbbc588"
+          focused="$(git -C target log --no-merges -1 --format='%H' -- "$TARGET_PATH")"
+          test "$focused" = "$EXPECTED_REVISION"
+          test -n "$(git -C target diff-tree --no-commit-id --name-only -r "$focused" -- "$TARGET_PATH")"
+          "$PWD/cultist/target/release/examples/rust_edit_class_observation" \
+            "$PWD/target" oxc-project/oxc oxc-project/oxc \
+            8783524015b1e6ff1c39ccf426df0bb07cbbc588 \
+            "$TARGET_PATH" > pinned-source.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          observation = json.loads(Path("pinned-source.json").read_text())["observation"]
+          assert observation["value_state"]["state"] == "unknown", observation
+          assert "anchor-unchanged" in observation["value_state"]["reason_ref"], observation
+          assert observation["applicability"]["status"] == "applies", observation
+          assert "current=oxc-project/oxc@8783524015b1e6ff1c39ccf426df0bb07cbbc588" in observation["applicability"]["receipt_ref"], observation
+          PY
+
+      - name: Execute focused source producer
+        env:
+          EXPECTED_REVISION: ${{ steps.requirement.outputs.revision }}
+          TARGET_PATH: ${{ steps.requirement.outputs.path }}
+        run: |
+          set -euo pipefail
+          git -C target checkout -q "$EXPECTED_REVISION"
+          "$PWD/cultist/target/release/examples/rust_edit_class_observation" \
+            "$PWD/target" oxc-project/oxc oxc-project/oxc "$EXPECTED_REVISION" "$TARGET_PATH" \
+            > source-result.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          requirement = json.loads(Path("oxc-requirement.json").read_text())
+          source = json.loads(Path("source-result.json").read_text())
+          assert source["observation"]["discriminator_id"] == requirement["discriminator_id"], source
+          assert source["observation"]["subject_ref"] == requirement["subject_ref"], source
+          assert source["observation"]["value_state"] == {"state": "known", "value_ref": "syntax_changed"}, source
+          assert source["observation"]["applicability"]["status"] == "applies", source
+          assert "current=oxc-project/oxc@" in source["observation"]["applicability"]["receipt_ref"], source
+          PY
+
+      - name: Plan selected probe with v2 frontier applicability
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path("source-result.json").read_text())
+          missing = json.loads(Path("missing-frontier.json").read_text())["frontiers"][0]
+          subject = source["subject"]
+          request = {
+              "schema_version": 2,
+              "frontier": missing,
+              "frontier_requirements": source["bridge"]["clearing_requirements"],
+              "bridges": [source["bridge"]],
+              "context": {
+                  "repository": subject["repository"],
+                  "revision": subject["revision"],
+                  "path": subject["path"],
+              },
+              "probes": [source["probe"]],
+              "allow_effectful": False,
+              "policy": "conservative",
+          }
+          Path("plan-request.json").write_text(json.dumps(request))
+          PY
+          "$PWD/cultist/target/release/examples/observation_probe_plan" \
+            < plan-request.json > plan.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          plan = json.loads(Path("plan.json").read_text())
+          assert plan["frontier_status"] == "missing", plan
+          assert plan["applicability_status"] == "applies", plan
+          assert plan["status"] == "planned", plan
+          assert plan["evidence_plan"]["status"] == "selected", plan
+          PY
+
+      - name: Feed produced observation into exact frontier
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          batch = json.loads(Path("withheld-observations.json").read_text())
+          source = json.loads(Path("source-result.json").read_text())
+          batch["observations"].append(source["observation"])
+          request = {
+              "schema_version": 2,
+              "requirements": [json.loads(Path("oxc-requirement.json").read_text())],
+              "observations": batch,
+          }
+          Path("current-frontier-request.json").write_text(json.dumps(request))
+          PY
+          "$PWD/cultist/target/release/examples/observation_frontiers" \
+            < current-frontier-request.json > current-frontier.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          requirement = json.loads(Path("oxc-requirement.json").read_text())
+          missing = json.loads(Path("missing-frontier.json").read_text())["frontiers"][0]
+          plan = json.loads(Path("plan.json").read_text())
+          current = json.loads(Path("current-frontier.json").read_text())["frontiers"][0]
+          assert missing["status"] == "missing", missing
+          assert plan["applicability_status"] == "applies", plan
+          assert plan["status"] == "planned", plan
+          assert current["status"] == "current", current
+          assert current["current"][0]["value_ref"] == "syntax_changed", current
+          assert len(current["other_subject"]) == 2, current
+          print(json.dumps({
+              "episode_id": "history/oxc-edit-class-v1",
+              "candidate_id": "syntax-changing-current-cohort",
+              "requirement": requirement,
+              "initial_frontier": missing["status"],
+              "consumption_applicability": plan["applicability_status"],
+              "selected_probe": plan["evidence_plan"]["selected"]["id"],
+              "produced_value": current["current"][0]["value_ref"],
+              "final_frontier": current["status"],
+              "other_subject_controls": len(current["other_subject"]),
+          }, indent=2, sort_keys=True))
+          PY
