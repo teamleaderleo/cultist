@@ -97,7 +97,9 @@ fn quarry_mako_provider_basis_macro_is_path_quiet() {
     let report: Value = serde_json::from_str(&stdout).expect("preflight output is json");
     let findings = report["findings"].as_array().expect("findings array");
     assert!(
-        findings.iter().all(|finding| finding["kind"].as_str() != Some("preflight-inventory-path-overlap")),
+        findings
+            .iter()
+            .all(|finding| finding["kind"].as_str() != Some("preflight-inventory-path-overlap")),
         "provider-basis macro unexpectedly overlaps active work: {stdout}"
     );
     let claims = report["claims"].as_array().expect("claims array");
