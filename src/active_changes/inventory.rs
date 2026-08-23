@@ -31,6 +31,9 @@ struct ActiveWorkInventory {
     observed_at: String,
     current: WorkItem,
     active_work: Vec<WorkItem>,
+    #[allow(dead_code)]
+    #[serde(default)]
+    provider_snapshot_identity: Option<String>,
     #[serde(default)]
     coordination_edges: Vec<CoordinationEdge>,
 }
@@ -132,13 +135,35 @@ struct ValidatedInventory {
     coordination_edges: Vec<CoordinationEdge>,
 }
 
+#[allow(dead_code)]
 pub fn build_active_inventory_analysis_report(
     root: &Path,
     inventory_path: &Path,
     scope: Option<&Path>,
 ) -> Result<AnalysisReport, Box<dyn Error>> {
     let bytes = read_bounded_inventory(inventory_path)?;
-    let inventory = validate_inventory(serde_json::from_slice(&bytes)?)?;
+    let raw: serde_json::Value = serde_json::from_slice(&bytes)?;
+    if raw.get("provider_snapshot_identity").is_some() {
+        return Err(
+            "provider-snapshot-bound inventory requires an explicit current provider snapshot context"
+                .into(),
+        );
+    }
+    let inventory = validate_inventory(serde_json::from_value(raw)?)?;
+    Ok(analyze_inventory(root, &inventory, scope))
+}
+
+pub(crate) fn build_active_inventory_analysis_report_from_bound_bytes(
+    root: &Path,
+    bytes: &[u8],
+    scope: Option<&Path>,
+) -> Result<AnalysisReport, Box<dyn Error>> {
+    if bytes.len() > MAX_INVENTORY_BYTES {
+        return Err(
+            format!("active-work inventory exceeds the {MAX_INVENTORY_BYTES}-byte limit").into(),
+        );
+    }
+    let inventory = validate_inventory(serde_json::from_slice(bytes)?)?;
     Ok(analyze_inventory(root, &inventory, scope))
 }
 
@@ -371,7 +396,7 @@ fn scoped_paths(paths: &[String], scope: Option<&Path>) -> BTreeSet<PathBuf> {
         .collect()
 }
 
-fn read_bounded_inventory(path: &Path) -> Result<Vec<u8>, Box<dyn Error>> {
+pub(crate) fn read_bounded_inventory(path: &Path) -> Result<Vec<u8>, Box<dyn Error>> {
     let metadata = std::fs::metadata(path)?;
     if metadata.len() > MAX_INVENTORY_BYTES as u64 {
         return Err(

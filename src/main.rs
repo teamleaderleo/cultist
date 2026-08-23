@@ -1,4 +1,7 @@
 mod active_changes;
+mod active_inventory_provider_snapshot;
+#[allow(dead_code)]
+mod applicability;
 mod ci_test_filters;
 mod diff;
 mod finding;
@@ -6,6 +9,7 @@ mod generated_diff;
 mod history;
 mod performance;
 mod preflight;
+mod provider_snapshot_applicability;
 mod render;
 mod report;
 mod rust_facts;
@@ -16,7 +20,7 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::process;
 
-use active_changes::build_active_inventory_analysis_report;
+use active_inventory_provider_snapshot::build_active_inventory_analysis_report_with_provider_snapshot;
 use ci_test_filters::{analyze_ci_test_filters, build_ci_test_filter_analysis};
 use diff::{build_diff_analysis_report, git_repo_root};
 use finding::AnalysisReport;
@@ -24,6 +28,7 @@ use history::{
     DEFAULT_MAX_COMMITS, HistoryOptions, analyze_historical_companions, print_history_report,
 };
 use preflight::build_preflight_analysis_report;
+use provider_snapshot_applicability::ProviderSnapshotIdentity;
 use render::render_analysis_report;
 use report::build_test_module_analysis;
 use test_modules::analyze_test_modules;
@@ -53,6 +58,7 @@ enum PreflightSource {
 #[derive(Debug, Eq, PartialEq)]
 struct PreflightArgs {
     source: PreflightSource,
+    current_provider_snapshot: Option<ProviderSnapshotIdentity>,
     path: Option<PathBuf>,
     format: OutputFormat,
 }
@@ -148,6 +154,7 @@ fn run_preflight(args: Vec<String>) -> Result<(), Box<dyn Error>> {
 
     let PreflightArgs {
         source,
+        current_provider_snapshot,
         path,
         format,
     } = parse_preflight_args(args)?;
@@ -185,7 +192,12 @@ fn run_preflight(args: Vec<String>) -> Result<(), Box<dyn Error>> {
                 )
                 .into());
             }
-            build_active_inventory_analysis_report(&root, &inventory, scope.as_deref())?
+            build_active_inventory_analysis_report_with_provider_snapshot(
+                &root,
+                &inventory,
+                scope.as_deref(),
+                current_provider_snapshot.as_ref(),
+            )?
         }
     };
     emit_analysis(&analysis, format)
@@ -349,12 +361,22 @@ fn parse_diff_args(args: Vec<String>, command: &str) -> Result<DiffArgs, Box<dyn
 fn parse_preflight_args(args: Vec<String>) -> Result<PreflightArgs, Box<dyn Error>> {
     let mut against = None;
     let mut inventory = None;
+    let mut current_provider_snapshot = None;
     let mut path = None;
     let mut format = OutputFormat::Text;
     let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--current-provider-snapshot" => {
+                if current_provider_snapshot.is_some() {
+                    return Err("`--current-provider-snapshot` may only be specified once".into());
+                }
+                let value = args
+                    .next()
+                    .ok_or("`--current-provider-snapshot` requires `sha256:<64-lowercase-hex>`")?;
+                current_provider_snapshot = Some(ProviderSnapshotIdentity::parse(value)?);
+            }
             "--against" => {
                 if against.is_some() {
                     return Err("`--against` may only be specified once".into());
@@ -407,8 +429,13 @@ fn parse_preflight_args(args: Vec<String>) -> Result<PreflightArgs, Box<dyn Erro
         }
     };
 
+    if current_provider_snapshot.is_some() && matches!(&source, PreflightSource::Against(_)) {
+        return Err("`--current-provider-snapshot` is only valid with `--inventory FILE`".into());
+    }
+
     Ok(PreflightArgs {
         source,
+        current_provider_snapshot,
         path,
         format,
     })
@@ -483,14 +510,14 @@ USAGE:
     cargo cultist check [--base REV] [--format text|json] [PATH]
     cargo cultist diff [--base REV] [--format text|json] [PATH]
     cargo cultist preflight --against REV [--format text|json] [PATH]
-    cargo cultist preflight --inventory FILE [--format text|json] [PATH]
+    cargo cultist preflight --inventory FILE [--current-provider-snapshot sha256:HEX] [--format text|json] [PATH]
     cargo cultist history [--max-commits N] [--format text|json] FILE
     cargo cultist ci-tests [--format text|json] [PATH]
     cargo-cultist [--format text|json] [PATH]
     cargo-cultist check [--base REV] [--format text|json] [PATH]
     cargo-cultist diff [--base REV] [--format text|json] [PATH]
     cargo-cultist preflight --against REV [--format text|json] [PATH]
-    cargo-cultist preflight --inventory FILE [--format text|json] [PATH]
+    cargo-cultist preflight --inventory FILE [--current-provider-snapshot sha256:HEX] [--format text|json] [PATH]
     cargo-cultist history [--max-commits N] [--format text|json] FILE
     cargo-cultist ci-tests [--format text|json] [PATH]
 
@@ -533,7 +560,7 @@ fn print_preflight_help() {
 
 USAGE:
     cargo cultist preflight --against REV [--format text|json] [PATH]
-    cargo cultist preflight --inventory FILE [--format text|json] [PATH]
+    cargo cultist preflight --inventory FILE [--current-provider-snapshot sha256:HEX] [--format text|json] [PATH]
 
 With --against, compares current work with REV from their merge base and reports
 direct path overlap as PROVEN collision evidence. Current work includes committed
@@ -541,7 +568,11 @@ branch changes plus staged and unstaged tracked changes.
 
 With --inventory, admits one bounded local active-change JSON snapshot, compares
 its recorded changed paths, and surfaces typed explicit coordination edges as
-OBSERVED supplied evidence. Inventory mode performs no provider/network fetch."#
+OBSERVED supplied evidence. When the inventory binds `provider_snapshot_identity`,
+`--current-provider-snapshot` supplies the independently derived current population
+identity; INVALID or UNKNOWN applicability withholds current-routing collision
+findings and asks for a refreshed provider view. Inventory mode performs no
+provider/network fetch."#
     );
 }
 
@@ -671,6 +702,53 @@ mod tests {
         );
         assert_eq!(parsed.path, Some(PathBuf::from("src")));
         assert_eq!(parsed.format, OutputFormat::Json);
+    }
+
+    #[test]
+    fn parses_preflight_inventory_current_provider_snapshot() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        let parsed = parse_preflight_args(vec![
+            "--inventory".to_string(),
+            "active.json".to_string(),
+            "--current-provider-snapshot".to_string(),
+            digest.clone(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            parsed
+                .current_provider_snapshot
+                .as_ref()
+                .map(ProviderSnapshotIdentity::as_str),
+            Some(digest.as_str())
+        );
+    }
+
+    #[test]
+    fn rejects_current_provider_snapshot_with_against_mode() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        assert!(
+            parse_preflight_args(vec![
+                "--against".to_string(),
+                "main".to_string(),
+                "--current-provider-snapshot".to_string(),
+                digest,
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_current_provider_snapshot() {
+        assert!(
+            parse_preflight_args(vec![
+                "--inventory".to_string(),
+                "active.json".to_string(),
+                "--current-provider-snapshot".to_string(),
+                "sha256:ABC".to_string(),
+            ])
+            .is_err()
+        );
     }
 
     #[test]

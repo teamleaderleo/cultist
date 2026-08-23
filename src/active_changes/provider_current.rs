@@ -26,10 +26,25 @@ pub fn build_active_inventory_analysis_report_with_provider_current(
     required_repository: &str,
     provider_current: &ProviderCurrentWorkContext,
 ) -> Result<AnalysisReport, Box<dyn Error>> {
-    validate_provider_current(provider_current)?;
-
     let bytes = read_bounded_inventory(inventory_path)?;
-    let inventory = validate_inventory(serde_json::from_slice(&bytes)?)?;
+    build_active_inventory_analysis_report_with_provider_current_from_bound_bytes(
+        root,
+        &bytes,
+        scope,
+        required_repository,
+        provider_current,
+    )
+}
+
+pub(crate) fn build_active_inventory_analysis_report_with_provider_current_from_bound_bytes(
+    root: &Path,
+    bytes: &[u8],
+    scope: Option<&Path>,
+    required_repository: &str,
+    provider_current: &ProviderCurrentWorkContext,
+) -> Result<AnalysisReport, Box<dyn Error>> {
+    validate_provider_current(provider_current)?;
+    let inventory = validate_inventory(serde_json::from_slice(bytes)?)?;
     let applicability =
         evaluate_provider_current(&inventory, required_repository, provider_current)?;
 
