@@ -25,16 +25,19 @@ mod inventory {
     };
 }
 
+mod provider_snapshot;
+pub(crate) use provider_snapshot::build_active_inventory_analysis_report_with_provider_snapshot;
+
 #[allow(unused_imports)]
 pub(crate) use inventory::{
     ProviderCurrentWorkContext, build_active_inventory_analysis_report_with_provider_current,
 };
 
-pub(crate) fn read_bounded_inventory(path: &Path) -> Result<Vec<u8>, Box<dyn Error>> {
+fn read_bounded_inventory(path: &Path) -> Result<Vec<u8>, Box<dyn Error>> {
     inventory::read_bounded_inventory(path)
 }
 
-pub(crate) fn build_active_inventory_analysis_report_from_bound_bytes(
+fn build_active_inventory_analysis_report_from_bound_bytes(
     root: &Path,
     bytes: &[u8],
     scope: Option<&Path>,
