@@ -25,6 +25,7 @@ mod inventory {
     };
 }
 
+#[allow(unused_imports)]
 pub(crate) use inventory::{
     ProviderCurrentWorkContext, build_active_inventory_analysis_report_with_provider_current,
 };
