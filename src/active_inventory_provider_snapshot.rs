@@ -2,8 +2,8 @@ use std::error::Error;
 use std::path::Path;
 
 use crate::active_changes::{
-    build_active_inventory_analysis_report, build_active_inventory_analysis_report_from_bound_bytes,
-    read_bounded_inventory,
+    build_active_inventory_analysis_report,
+    build_active_inventory_analysis_report_from_bound_bytes, read_bounded_inventory,
 };
 use crate::applicability::ApplicabilityStatus;
 use crate::finding::{AnalysisReport, Claim, ClaimKind, Evidence, Finding};
@@ -35,28 +35,12 @@ fn is_work_applicability_finding(finding: &Finding) -> bool {
     )
 }
 
-pub fn build_active_inventory_analysis_report_with_provider_snapshot(
-    root: &Path,
-    inventory_path: &Path,
-    scope: Option<&Path>,
+fn apply_provider_snapshot_applicability(
+    mut analysis: AnalysisReport,
+    required: &ProviderSnapshotIdentity,
     current_provider_snapshot: Option<&ProviderSnapshotIdentity>,
-) -> Result<AnalysisReport, Box<dyn Error>> {
-    let bytes = read_bounded_inventory(inventory_path)?;
-    let required = required_provider_snapshot(&bytes)?;
-
-    let Some(required) = required else {
-        if current_provider_snapshot.is_some() {
-            return Err(
-                "current provider snapshot was supplied, but the inventory does not bind `provider_snapshot_identity`"
-                    .into(),
-            );
-        }
-        return build_active_inventory_analysis_report(root, inventory_path, scope);
-    };
-
-    let mut analysis =
-        build_active_inventory_analysis_report_from_bound_bytes(root, &bytes, scope)?;
-    let applicability = evaluate_provider_snapshot(&required, current_provider_snapshot);
+) -> AnalysisReport {
+    let applicability = evaluate_provider_snapshot(required, current_provider_snapshot);
 
     if applicability.status == ApplicabilityStatus::Applies {
         analysis.claims.push(Claim::new(
@@ -66,7 +50,7 @@ pub fn build_active_inventory_analysis_report_with_provider_snapshot(
                 required.as_str()
             ),
         ));
-        return Ok(analysis);
+        return analysis;
     }
 
     let before = analysis.findings.len();
@@ -101,7 +85,7 @@ pub fn build_active_inventory_analysis_report_with_provider_snapshot(
                 )
                 .with_claim(
                     Claim::new(
-                        ClaimKind::Observed,
+                        ClaimKind::Derived,
                         "The independently supplied provider population identity differs from the frozen inventory requirement.",
                     )
                     .with_evidence(Evidence::new(format!(
@@ -148,5 +132,133 @@ pub fn build_active_inventory_analysis_report_with_provider_snapshot(
         ApplicabilityStatus::Applies => unreachable!(),
     }
 
-    Ok(analysis)
+    analysis
+}
+
+pub fn build_active_inventory_analysis_report_with_provider_snapshot(
+    root: &Path,
+    inventory_path: &Path,
+    scope: Option<&Path>,
+    current_provider_snapshot: Option<&ProviderSnapshotIdentity>,
+) -> Result<AnalysisReport, Box<dyn Error>> {
+    let bytes = read_bounded_inventory(inventory_path)?;
+    let required = required_provider_snapshot(&bytes)?;
+
+    let Some(required) = required else {
+        if current_provider_snapshot.is_some() {
+            return Err(
+                "current provider snapshot was supplied, but the inventory does not bind `provider_snapshot_identity`"
+                    .into(),
+            );
+        }
+        return build_active_inventory_analysis_report(root, inventory_path, scope);
+    };
+
+    let analysis = build_active_inventory_analysis_report_from_bound_bytes(root, &bytes, scope)?;
+    Ok(apply_provider_snapshot_applicability(
+        analysis,
+        &required,
+        current_provider_snapshot,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn identity(byte: char) -> ProviderSnapshotIdentity {
+        ProviderSnapshotIdentity::parse(format!("sha256:{}", byte.to_string().repeat(64))).unwrap()
+    }
+
+    fn report_with(findings: &[(&str, &str)]) -> AnalysisReport {
+        let mut report = AnalysisReport::new("test-provider-applicability", "/repo");
+        report.findings.extend(
+            findings
+                .iter()
+                .map(|(kind, title)| Finding::new(*kind, *title)),
+        );
+        report
+    }
+
+    fn has_kind(report: &AnalysisReport, kind: &str) -> bool {
+        report.findings.iter().any(|finding| finding.kind == kind)
+    }
+
+    #[test]
+    fn work_invalid_survives_population_unknown_and_routing_is_withheld() {
+        let required = identity('a');
+        let report = report_with(&[
+            (
+                "preflight-inventory-current-work-applicability-invalid",
+                "Current work applicability changed",
+            ),
+            ("preflight-inventory-path-overlap", "Active-change path overlap"),
+        ]);
+
+        let result = apply_provider_snapshot_applicability(report, &required, None);
+
+        assert!(has_kind(
+            &result,
+            "preflight-inventory-current-work-applicability-invalid"
+        ));
+        assert!(has_kind(
+            &result,
+            "preflight-inventory-provider-snapshot-unknown"
+        ));
+        assert!(!has_kind(&result, "preflight-inventory-path-overlap"));
+    }
+
+    #[test]
+    fn work_unknown_survives_population_invalid_and_routing_is_withheld() {
+        let required = identity('a');
+        let current = identity('b');
+        let report = report_with(&[
+            (
+                "preflight-inventory-current-work-applicability-unknown",
+                "Current work applicability unknown",
+            ),
+            ("preflight-inventory-path-overlap", "Active-change path overlap"),
+        ]);
+
+        let result = apply_provider_snapshot_applicability(report, &required, Some(&current));
+
+        assert!(has_kind(
+            &result,
+            "preflight-inventory-current-work-applicability-unknown"
+        ));
+        assert!(has_kind(
+            &result,
+            "preflight-inventory-provider-snapshot-invalid"
+        ));
+        assert!(!has_kind(&result, "preflight-inventory-path-overlap"));
+    }
+
+    #[test]
+    fn population_applies_preserves_work_axis_and_routing_findings() {
+        let required = identity('a');
+        let report = report_with(&[
+            (
+                "preflight-inventory-current-work-applicability-invalid",
+                "Current work applicability changed",
+            ),
+            ("preflight-inventory-path-overlap", "Active-change path overlap"),
+        ]);
+
+        let result =
+            apply_provider_snapshot_applicability(report, &required, Some(&required));
+
+        assert!(has_kind(
+            &result,
+            "preflight-inventory-current-work-applicability-invalid"
+        ));
+        assert!(has_kind(&result, "preflight-inventory-path-overlap"));
+        assert!(!has_kind(
+            &result,
+            "preflight-inventory-provider-snapshot-invalid"
+        ));
+        assert!(!has_kind(
+            &result,
+            "preflight-inventory-provider-snapshot-unknown"
+        ));
+    }
 }
