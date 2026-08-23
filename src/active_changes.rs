@@ -20,8 +20,7 @@ mod inventory {
     }
 
     pub(crate) use provider_current::{
-        ProviderCurrentWorkContext,
-        build_active_inventory_analysis_report_with_provider_current,
+        ProviderCurrentWorkContext, build_active_inventory_analysis_report_with_provider_current,
         build_active_inventory_analysis_report_with_provider_current_from_bound_bytes,
     };
 }
@@ -50,7 +49,9 @@ pub(crate) fn build_active_inventory_analysis_report_from_bound_bytes(
                 &context,
             )
         }
-        None => inventory::build_active_inventory_analysis_report_from_bound_bytes(root, bytes, scope),
+        None => {
+            inventory::build_active_inventory_analysis_report_from_bound_bytes(root, bytes, scope)
+        }
     }
 }
 
