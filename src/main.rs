@@ -1,4 +1,6 @@
 mod active_changes;
+mod active_inventory_context;
+mod applicability;
 mod ci_test_filters;
 mod diff;
 mod finding;
@@ -6,6 +8,7 @@ mod generated_diff;
 mod history;
 mod performance;
 mod preflight;
+mod provider_snapshot_applicability;
 mod render;
 mod report;
 mod rust_facts;
@@ -16,7 +19,7 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::process;
 
-use active_changes::build_active_inventory_analysis_report;
+use active_inventory_context::build_active_inventory_analysis_report_with_context;
 use ci_test_filters::{analyze_ci_test_filters, build_ci_test_filter_analysis};
 use diff::{build_diff_analysis_report, git_repo_root};
 use finding::AnalysisReport;
@@ -53,6 +56,7 @@ enum PreflightSource {
 #[derive(Debug, Eq, PartialEq)]
 struct PreflightArgs {
     source: PreflightSource,
+    inventory_context: Option<PathBuf>,
     path: Option<PathBuf>,
     format: OutputFormat,
 }
@@ -148,6 +152,7 @@ fn run_preflight(args: Vec<String>) -> Result<(), Box<dyn Error>> {
 
     let PreflightArgs {
         source,
+        inventory_context,
         path,
         format,
     } = parse_preflight_args(args)?;
@@ -185,7 +190,33 @@ fn run_preflight(args: Vec<String>) -> Result<(), Box<dyn Error>> {
                 )
                 .into());
             }
-            build_active_inventory_analysis_report(&root, &inventory, scope.as_deref())?
+
+            let inventory_context = match inventory_context {
+                Some(context) => {
+                    let context = if context.is_absolute() {
+                        context
+                    } else {
+                        env::current_dir()?.join(context)
+                    };
+                    let context = context.canonicalize()?;
+                    if !context.is_file() {
+                        return Err(format!(
+                            "active-work consumption context is not a file: {}",
+                            context.display()
+                        )
+                        .into());
+                    }
+                    Some(context)
+                }
+                None => None,
+            };
+
+            build_active_inventory_analysis_report_with_context(
+                &root,
+                &inventory,
+                inventory_context.as_deref(),
+                scope.as_deref(),
+            )?
         }
     };
     emit_analysis(&analysis, format)
@@ -349,6 +380,7 @@ fn parse_diff_args(args: Vec<String>, command: &str) -> Result<DiffArgs, Box<dyn
 fn parse_preflight_args(args: Vec<String>) -> Result<PreflightArgs, Box<dyn Error>> {
     let mut against = None;
     let mut inventory = None;
+    let mut inventory_context = None;
     let mut path = None;
     let mut format = OutputFormat::Text;
     let mut args = args.into_iter();
@@ -367,6 +399,15 @@ fn parse_preflight_args(args: Vec<String>) -> Result<PreflightArgs, Box<dyn Erro
                 }
                 inventory = Some(PathBuf::from(
                     args.next().ok_or("`--inventory` requires a JSON file")?,
+                ));
+            }
+            "--inventory-context" => {
+                if inventory_context.is_some() {
+                    return Err("`--inventory-context` may only be specified once".into());
+                }
+                inventory_context = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("`--inventory-context` requires a JSON file")?,
                 ));
             }
             "--format" => {
@@ -392,6 +433,10 @@ fn parse_preflight_args(args: Vec<String>) -> Result<PreflightArgs, Box<dyn Erro
         }
     }
 
+    if inventory_context.is_some() && inventory.is_none() {
+        return Err("`--inventory-context` requires `--inventory FILE`".into());
+    }
+
     let source = match (against, inventory) {
         (Some(against), None) => PreflightSource::Against(against),
         (None, Some(inventory)) => PreflightSource::Inventory(inventory),
@@ -409,6 +454,7 @@ fn parse_preflight_args(args: Vec<String>) -> Result<PreflightArgs, Box<dyn Erro
 
     Ok(PreflightArgs {
         source,
+        inventory_context,
         path,
         format,
     })
@@ -483,14 +529,14 @@ USAGE:
     cargo cultist check [--base REV] [--format text|json] [PATH]
     cargo cultist diff [--base REV] [--format text|json] [PATH]
     cargo cultist preflight --against REV [--format text|json] [PATH]
-    cargo cultist preflight --inventory FILE [--format text|json] [PATH]
+    cargo cultist preflight --inventory FILE [--inventory-context FILE] [--format text|json] [PATH]
     cargo cultist history [--max-commits N] [--format text|json] FILE
     cargo cultist ci-tests [--format text|json] [PATH]
     cargo-cultist [--format text|json] [PATH]
     cargo-cultist check [--base REV] [--format text|json] [PATH]
     cargo-cultist diff [--base REV] [--format text|json] [PATH]
     cargo-cultist preflight --against REV [--format text|json] [PATH]
-    cargo-cultist preflight --inventory FILE [--format text|json] [PATH]
+    cargo-cultist preflight --inventory FILE [--inventory-context FILE] [--format text|json] [PATH]
     cargo-cultist history [--max-commits N] [--format text|json] FILE
     cargo-cultist ci-tests [--format text|json] [PATH]
 
@@ -533,7 +579,7 @@ fn print_preflight_help() {
 
 USAGE:
     cargo cultist preflight --against REV [--format text|json] [PATH]
-    cargo cultist preflight --inventory FILE [--format text|json] [PATH]
+    cargo cultist preflight --inventory FILE [--inventory-context FILE] [--format text|json] [PATH]
 
 With --against, compares current work with REV from their merge base and reports
 direct path overlap as PROVEN collision evidence. Current work includes committed
@@ -541,7 +587,13 @@ branch changes plus staged and unstaged tracked changes.
 
 With --inventory, admits one bounded local active-change JSON snapshot, compares
 its recorded changed paths, and surfaces typed explicit coordination edges as
-OBSERVED supplied evidence. Inventory mode performs no provider/network fetch."#
+OBSERVED supplied evidence. Inventory mode performs no provider/network fetch.
+
+With --inventory-context, additionally admits one bounded consumption-context JSON
+sidecar bound to the exact inventory bytes. Explicit provider-current work and/or
+provider-population applicability gates current-routing interpretation when INVALID
+or UNKNOWN; the context never derives provider coordinates from checkout HEAD,
+repository revision, branch age, or observed_at."#
     );
 }
 
@@ -650,6 +702,7 @@ mod tests {
             parsed.source,
             PreflightSource::Against("other-agent".to_string())
         );
+        assert_eq!(parsed.inventory_context, None);
         assert_eq!(parsed.path, Some(PathBuf::from("src")));
         assert_eq!(parsed.format, OutputFormat::Json);
     }
@@ -669,8 +722,42 @@ mod tests {
             parsed.source,
             PreflightSource::Inventory(PathBuf::from("active.json"))
         );
+        assert_eq!(parsed.inventory_context, None);
         assert_eq!(parsed.path, Some(PathBuf::from("src")));
         assert_eq!(parsed.format, OutputFormat::Json);
+    }
+
+    #[test]
+    fn parses_preflight_inventory_context() {
+        let parsed = parse_preflight_args(vec![
+            "--inventory".to_string(),
+            "active.json".to_string(),
+            "--inventory-context".to_string(),
+            "context.json".to_string(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            parsed.source,
+            PreflightSource::Inventory(PathBuf::from("active.json"))
+        );
+        assert_eq!(
+            parsed.inventory_context,
+            Some(PathBuf::from("context.json"))
+        );
+    }
+
+    #[test]
+    fn rejects_preflight_context_without_inventory() {
+        assert!(
+            parse_preflight_args(vec![
+                "--against".to_string(),
+                "other".to_string(),
+                "--inventory-context".to_string(),
+                "context.json".to_string(),
+            ])
+            .is_err()
+        );
     }
 
     #[test]
