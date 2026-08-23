@@ -2,7 +2,8 @@ use std::error::Error;
 use std::path::Path;
 
 use crate::active_changes::{
-    build_active_inventory_analysis_report_from_bound_bytes, read_bounded_inventory,
+    build_active_inventory_analysis_report, build_active_inventory_analysis_report_from_bound_bytes,
+    read_bounded_inventory,
 };
 use crate::applicability::ApplicabilityStatus;
 use crate::finding::{AnalysisReport, Claim, ClaimKind, Evidence, Finding};
@@ -50,7 +51,7 @@ pub fn build_active_inventory_analysis_report_with_provider_snapshot(
                     .into(),
             );
         }
-        return build_active_inventory_analysis_report_from_bound_bytes(root, &bytes, scope);
+        return build_active_inventory_analysis_report(root, inventory_path, scope);
     };
 
     let mut analysis =
