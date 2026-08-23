@@ -192,7 +192,10 @@ mod tests {
                 "preflight-inventory-current-work-applicability-invalid",
                 "Current work applicability changed",
             ),
-            ("preflight-inventory-path-overlap", "Active-change path overlap"),
+            (
+                "preflight-inventory-path-overlap",
+                "Active-change path overlap",
+            ),
         ]);
 
         let result = apply_provider_snapshot_applicability(report, &required, None);
@@ -217,7 +220,10 @@ mod tests {
                 "preflight-inventory-current-work-applicability-unknown",
                 "Current work applicability unknown",
             ),
-            ("preflight-inventory-path-overlap", "Active-change path overlap"),
+            (
+                "preflight-inventory-path-overlap",
+                "Active-change path overlap",
+            ),
         ]);
 
         let result = apply_provider_snapshot_applicability(report, &required, Some(&current));
@@ -241,8 +247,7 @@ mod tests {
             "Active-change path overlap",
         )]);
 
-        let result =
-            apply_provider_snapshot_applicability(report, &required, Some(&required));
+        let result = apply_provider_snapshot_applicability(report, &required, Some(&required));
 
         assert!(has_kind(&result, "preflight-inventory-path-overlap"));
         assert!(!has_kind(
