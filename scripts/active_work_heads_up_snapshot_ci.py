@@ -15,6 +15,75 @@ import active_work_heads_up_ci as base
 from github_provider_snapshot_ci import derive_provider_snapshot_identities
 
 
+SINGLE_READ_PR_PAGE_QUERY = r"""
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(
+      states: OPEN
+      first: 100
+      orderBy: {field: UPDATED_AT, direction: DESC}
+    ) {
+      nodes {
+        number
+        title
+        url
+        body
+        headRefName
+        headRefOid
+        updatedAt
+        isDraft
+        filesFirst: files(first: 100) {
+          totalCount
+          nodes { path }
+        }
+        filesLast: files(last: 100) {
+          totalCount
+          nodes { path }
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"""
+
+
+def complete_changed_paths_from_single_response(node: dict[str, object]) -> list[str]:
+    """Return exact changed paths only when one response proves completeness."""
+    number = int(node["number"])
+    files_first = node.get("filesFirst")
+    files_last = node.get("filesLast")
+    if not isinstance(files_first, dict) or not isinstance(files_last, dict):
+        raise RuntimeError(f"PR #{number} has no readable bounded files connections")
+
+    first_total = files_first.get("totalCount")
+    last_total = files_last.get("totalCount")
+    if (
+        isinstance(first_total, bool)
+        or not isinstance(first_total, int)
+        or first_total < 0
+        or isinstance(last_total, bool)
+        or not isinstance(last_total, int)
+        or last_total < 0
+    ):
+        raise RuntimeError(f"PR #{number} has no readable provider file count")
+    if first_total != last_total:
+        raise RuntimeError(
+            f"PR #{number} provider file counts disagree within one response: "
+            f"{first_total} != {last_total}"
+        )
+
+    first_paths = base.file_paths_from_connection(files_first)
+    last_paths = base.file_paths_from_connection(files_last)
+    paths = sorted(set(first_paths + last_paths))
+    if len(paths) != first_total:
+        raise RuntimeError(
+            f"provider one-response file coverage incomplete for PR #{number}: "
+            f"{len(paths)} of {first_total} path(s); exact snapshot unavailable"
+        )
+    return paths
+
+
 def build_single_read_inventory_and_metadata(
     repo: str,
     current_number: int,
@@ -22,8 +91,8 @@ def build_single_read_inventory_and_metadata(
     """Build one provider population from exactly one GraphQL response."""
     owner, name = repo.split("/", 1)
     result = base.graphql(
-        base.PR_PAGE_QUERY,
-        {"owner": owner, "name": name, "after": None},
+        SINGLE_READ_PR_PAGE_QUERY,
+        {"owner": owner, "name": name},
     )
     data = result.get("data")
     repository = data.get("repository") if isinstance(data, dict) else None
@@ -47,17 +116,13 @@ def build_single_read_inventory_and_metadata(
     for node in nodes:
         if not isinstance(node, dict):
             continue
-        number = int(node["number"])
-        files = node.get("files")
-        if not isinstance(files, dict):
-            raise RuntimeError(f"PR #{number} has no readable files connection")
-        files_has_next, _files_cursor = base.page_info(files)
-        if files_has_next:
-            raise RuntimeError(
-                f"provider population requires file pagination for PR #{number}; "
-                "exact snapshot unavailable"
-            )
-        work.append(base.work_item(owner, name, node))
+        paths = complete_changed_paths_from_single_response(node)
+        normalized_node = dict(node)
+        normalized_node["files"] = {
+            "nodes": [{"path": path} for path in paths],
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+        }
+        work.append(base.work_item(owner, name, normalized_node))
         metadata_work.append(base.metadata_item(node))
 
     current = next((item for item in work if item["id"] == f"#{current_number}"), None)
