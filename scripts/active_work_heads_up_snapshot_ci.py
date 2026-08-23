@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,75 @@ import time
 
 import active_work_heads_up_ci as base
 from github_provider_snapshot_ci import derive_provider_snapshot_identities
+
+
+def build_single_read_inventory_and_metadata(
+    repo: str,
+    current_number: int,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Build one provider population from exactly one GraphQL response."""
+    owner, name = repo.split("/", 1)
+    result = base.graphql(
+        base.PR_PAGE_QUERY,
+        {"owner": owner, "name": name, "after": None},
+    )
+    data = result.get("data")
+    repository = data.get("repository") if isinstance(data, dict) else None
+    pull_requests = (
+        repository.get("pullRequests") if isinstance(repository, dict) else None
+    )
+    if not isinstance(pull_requests, dict):
+        raise RuntimeError("could not retrieve open pull requests")
+
+    nodes = pull_requests.get("nodes")
+    if not isinstance(nodes, list):
+        raise RuntimeError("open pull-request connection is missing nodes")
+    has_next, _cursor = base.page_info(pull_requests)
+    if has_next:
+        raise RuntimeError(
+            "provider population requires pull-request pagination; exact snapshot unavailable"
+        )
+
+    work: list[dict[str, object]] = []
+    metadata_work: list[dict[str, object]] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        number = int(node["number"])
+        files = node.get("files")
+        if not isinstance(files, dict):
+            raise RuntimeError(f"PR #{number} has no readable files connection")
+        files_has_next, _files_cursor = base.page_info(files)
+        if files_has_next:
+            raise RuntimeError(
+                f"provider population requires file pagination for PR #{number}; "
+                "exact snapshot unavailable"
+            )
+        work.append(base.work_item(owner, name, node))
+        metadata_work.append(base.metadata_item(node))
+
+    current = next((item for item in work if item["id"] == f"#{current_number}"), None)
+    if current is None:
+        raise RuntimeError(f"current PR #{current_number} was absent from open inventory")
+
+    observed_at = (
+        datetime.datetime.now(datetime.timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+    inventory = {
+        "schema_version": 1,
+        "source": "github_pull_requests_graphql_single_read",
+        "observed_at": observed_at,
+        "current": current,
+        "active_work": work,
+    }
+    metadata = {
+        "schema_version": 1,
+        "source": "github_pull_requests_graphql_single_read",
+        "work": metadata_work,
+    }
+    return inventory, metadata
 
 
 def coordination_for_snapshot(
@@ -59,7 +129,9 @@ def read_current_provider_snapshot(
     current_number: int,
 ) -> tuple[dict[str, object], list[dict[str, object]]] | None:
     try:
-        inventory, metadata = base.build_inventory_and_metadata(repo, current_number)
+        inventory, metadata = build_single_read_inventory_and_metadata(
+            repo, current_number
+        )
         edges, _note, _seconds = coordination_for_snapshot(
             inventory, metadata, retain_note=False
         )
@@ -128,7 +200,7 @@ def main() -> None:
     current_number = int(os.environ["CURRENT_PR"])
 
     inventory_started = time.monotonic()
-    inventory, metadata = base.build_inventory_and_metadata(repo, current_number)
+    inventory, metadata = build_single_read_inventory_and_metadata(repo, current_number)
     inventory_seconds = time.monotonic() - inventory_started
 
     relevant_edges, metadata_note, coordination_seconds = coordination_for_snapshot(
