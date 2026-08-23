@@ -107,6 +107,7 @@ fn consume_frontier(
     plan_observation_probe(&ObservationProbePlanRequest {
         schema_version: OBSERVATION_PROBE_BRIDGE_SCHEMA_VERSION,
         frontier,
+        frontier_requirements: requirements(),
         bridges: Vec::new(),
         context: context(revision),
         probes: Vec::new(),
@@ -117,7 +118,7 @@ fn consume_frontier(
 }
 
 #[test]
-fn current_frontier_short_circuit_outlives_moved_consumption_revision() {
+fn moved_consumption_revision_invalidates_old_current_frontier() {
     let frontier = current_frontier_produced_at_head_a();
 
     assert_eq!(
@@ -127,18 +128,31 @@ fn current_frontier_short_circuit_outlives_moved_consumption_revision() {
 
     let plan = consume_frontier(frontier, Some("head-b"));
     assert_eq!(plan.frontier_status, ObservationFrontierStatus::Current);
-    assert_eq!(plan.status, ObservationProbePlanStatus::AlreadyCurrent);
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Invalid);
+    assert_eq!(plan.status, ObservationProbePlanStatus::NoAdmittedMapping);
     assert!(plan.evidence_plan.is_none());
 }
 
 #[test]
-fn current_frontier_short_circuit_outlives_missing_consumption_revision() {
+fn missing_consumption_revision_preserves_unknown_for_old_current_frontier() {
     let frontier = current_frontier_produced_at_head_a();
 
     assert_eq!(shared_applicability(None), ApplicabilityStatus::Unknown);
 
     let plan = consume_frontier(frontier, None);
     assert_eq!(plan.frontier_status, ObservationFrontierStatus::Current);
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Unknown);
+    assert_eq!(plan.status, ObservationProbePlanStatus::NoAdmittedMapping);
+    assert!(plan.evidence_plan.is_none());
+}
+
+#[test]
+fn unchanged_consumption_context_keeps_current_short_circuit() {
+    let frontier = current_frontier_produced_at_head_a();
+
+    let plan = consume_frontier(frontier, Some("head-a"));
+    assert_eq!(plan.frontier_status, ObservationFrontierStatus::Current);
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Applies);
     assert_eq!(plan.status, ObservationProbePlanStatus::AlreadyCurrent);
     assert!(plan.evidence_plan.is_none());
 }
