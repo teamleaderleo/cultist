@@ -1,3 +1,7 @@
+#[allow(dead_code)]
+#[path = "provider_snapshot_applicability/identity.rs"]
+pub mod identity;
+
 use std::error::Error;
 use std::fmt;
 
