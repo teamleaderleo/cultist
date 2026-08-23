@@ -82,8 +82,13 @@ pub fn build_active_inventory_analysis_report_with_context(
         return build_active_inventory_analysis_report(root, inventory_path, scope);
     };
 
-    let inventory_bytes = read_bounded(inventory_path, MAX_INVENTORY_BYTES, "active-work inventory")?;
-    let context_bytes = read_bounded(context_path, MAX_CONTEXT_BYTES, "active-work consumption context")?;
+    let inventory_bytes =
+        read_bounded(inventory_path, MAX_INVENTORY_BYTES, "active-work inventory")?;
+    let context_bytes = read_bounded(
+        context_path,
+        MAX_CONTEXT_BYTES,
+        "active-work consumption context",
+    )?;
     let context: ActiveInventoryConsumptionContext = serde_json::from_slice(&context_bytes)?;
     validate_context(&context, &inventory_bytes)?;
 
@@ -168,9 +173,10 @@ fn evaluate_context(
         .as_ref()
         .map(|input| evaluate_current_work(&binding.current, input))
         .transpose()?;
-    let provider_snapshot = context.provider_snapshot.as_ref().map(|input| {
-        evaluate_provider_snapshot(&input.required, input.current.as_ref())
-    });
+    let provider_snapshot = context
+        .provider_snapshot
+        .as_ref()
+        .map(|input| evaluate_provider_snapshot(&input.required, input.current.as_ref()));
 
     let status = combine_statuses(
         work.as_ref().map(|value| value.status),
@@ -195,7 +201,10 @@ fn evaluate_current_work(
             ..EvidenceRequirements::default()
         },
         context: EvaluationContext {
-            revision: input.current.as_ref().map(|current| current.head_sha.clone()),
+            revision: input
+                .current
+                .as_ref()
+                .map(|current| current.head_sha.clone()),
             work: input.current.as_ref().map(|current| current.id.clone()),
             ..EvaluationContext::default()
         },
@@ -278,8 +287,8 @@ fn apply_context(
             "preflight-inventory-path-overlap"
             | "preflight-inventory-path-overlap-activity-unknown" => {
                 finding.kind = "preflight-inventory-path-overlap-applicability-gated".to_string();
-                finding.title = "Path overlap in supplied inventory; current applicability gated"
-                    .to_string();
+                finding.title =
+                    "Path overlap in supplied inventory; current applicability gated".to_string();
                 finding.claims.push(gate_claim.clone());
                 finding.question = Some(
                     "Refresh the explicit provider-current context before treating this supplied path overlap as a current collision."
@@ -326,9 +335,7 @@ fn work_applicability_claim(evaluation: &EvidenceApplicability) -> Claim {
     claim
 }
 
-fn provider_snapshot_applicability_claim(
-    evaluation: &ProviderSnapshotApplicability,
-) -> Claim {
+fn provider_snapshot_applicability_claim(evaluation: &ProviderSnapshotApplicability) -> Claim {
     Claim::new(
         claim_kind_for_status(evaluation.status),
         format!(
@@ -479,19 +486,19 @@ mod tests {
     }
 
     fn has_gated_overlap(report: &AnalysisReport) -> bool {
-        report.findings.iter().any(|finding| {
-            finding.kind == "preflight-inventory-path-overlap-applicability-gated"
-        })
+        report
+            .findings
+            .iter()
+            .any(|finding| finding.kind == "preflight-inventory-path-overlap-applicability-gated")
     }
 
     #[test]
     fn legacy_inventory_without_context_preserves_strong_overlap() {
         let root = root("legacy");
         let inventory = inventory(&root, "confirmed_active", false);
-        let report = build_active_inventory_analysis_report_with_context(
-            &root, &inventory, None, None,
-        )
-        .unwrap();
+        let report =
+            build_active_inventory_analysis_report_with_context(&root, &inventory, None, None)
+                .unwrap();
         assert!(has_strong_overlap(&report));
         fs::remove_dir_all(root).unwrap();
     }
@@ -517,7 +524,9 @@ mod tests {
         .unwrap();
         assert!(has_strong_overlap(&report));
         assert!(report.claims.iter().any(|claim| {
-            claim.message.contains("Provider-current work applicability is APPLIES")
+            claim
+                .message
+                .contains("Provider-current work applicability is APPLIES")
         }));
         fs::remove_dir_all(root).unwrap();
     }
@@ -544,7 +553,9 @@ mod tests {
         assert!(!has_strong_overlap(&report));
         assert!(has_gated_overlap(&report));
         assert!(report.claims.iter().any(|claim| {
-            claim.message.contains("Provider-current work applicability is INVALID")
+            claim
+                .message
+                .contains("Provider-current work applicability is INVALID")
         }));
         fs::remove_dir_all(root).unwrap();
     }
@@ -567,7 +578,9 @@ mod tests {
         .unwrap();
         assert!(!has_strong_overlap(&report));
         assert!(report.claims.iter().any(|claim| {
-            claim.message.contains("Provider-current work applicability is UNKNOWN")
+            claim
+                .message
+                .contains("Provider-current work applicability is UNKNOWN")
         }));
         fs::remove_dir_all(root).unwrap();
     }
@@ -757,10 +770,12 @@ mod tests {
         assert!(report.findings.iter().any(|finding| {
             finding.kind == "preflight-explicit-coordination-applicability-gated"
         }));
-        assert!(!report
-            .findings
-            .iter()
-            .any(|finding| finding.kind == "preflight-explicit-coordination"));
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.kind == "preflight-explicit-coordination")
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }
