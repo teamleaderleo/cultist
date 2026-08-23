@@ -77,15 +77,21 @@ jobs:
         run: |
           python -m py_compile \
             scripts/active_work_heads_up_ci.py \
-            scripts/active_work_heads_up_ci_test.py
+            scripts/active_work_heads_up_ci_test.py \
+            scripts/active_work_heads_up_snapshot_ci.py \
+            scripts/active_work_heads_up_snapshot_ci_test.py \
+            scripts/github_provider_snapshot_ci.py \
+            scripts/github_provider_snapshot_ci_test.py
           python scripts/active_work_heads_up_ci_test.py
+          python scripts/active_work_heads_up_snapshot_ci_test.py
+          python scripts/github_provider_snapshot_ci_test.py
       - name: Active work heads-up
         if: github.event_name == 'pull_request'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           CURRENT_PR: ${{ github.event.pull_request.number }}
-        run: python scripts/active_work_heads_up_ci.py
+        run: python scripts/active_work_heads_up_snapshot_ci.py
       - name: Test
         run: cargo test
       - name: Dogfood repository scan
