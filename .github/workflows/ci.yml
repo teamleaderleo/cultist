@@ -86,6 +86,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CURRENT_PR: ${{ github.event.pull_request.number }}
         run: python scripts/active_work_heads_up_ci.py
+      - name: Kestrel Quarry provider-snapshot preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/kestrel_quarry_preflight.py
       - name: Test
         run: cargo test
       - name: Dogfood repository scan
