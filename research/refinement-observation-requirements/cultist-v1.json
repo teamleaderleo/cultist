@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "mappings": [
+    {
+      "id": "justification/open-obligation-v1:allow-open-zero-edge:clearing-evidence-presence",
+      "episode_id": "justification/open-obligation-v1",
+      "candidate_id": "allow-open-zero-edge",
+      "discriminator_id": "clearing_evidence_presence",
+      "subject_ref": "refinement:justification/open-obligation-v1",
+      "source_receipt": "github:pull/159@1c1a0086a199168fd0e21445d103936183063dc7"
+    },
+    {
+      "id": "history/oxc-edit-class-v1:syntax-changing-current-cohort:edit-class",
+      "episode_id": "history/oxc-edit-class-v1",
+      "candidate_id": "syntax-changing-current-cohort",
+      "discriminator_id": "edit_class",
+      "subject_ref": "oxc-project/oxc@228e8e0f85c0e7aeded02c5e27fd810004d3b41a:crates/oxc_linter/src/rules.rs",
+      "source_receipt": "github-actions:run/32257998359#focused-oxc-edit-class"
+    },
+    {
+      "id": "project-memory/primary-case-contract-collision-v1:split-primary-case-admission:evidence-form",
+      "episode_id": "project-memory/primary-case-contract-collision-v1",
+      "candidate_id": "split-primary-case-admission",
+      "discriminator_id": "primary_case_evidence_form",
+      "subject_ref": "refinement:project-memory/primary-case-contract-collision-v1",
+      "source_receipt": "github:pull/174@e1196c553ab496df13a230535de997f30c2d63ca"
+    },
+    {
+      "id": "project-memory/primary-case-contract-collision-v1:split-primary-case-admission:target-relation",
+      "episode_id": "project-memory/primary-case-contract-collision-v1",
+      "candidate_id": "split-primary-case-admission",
+      "discriminator_id": "same_repository_issue_target",
+      "subject_ref": "refinement:project-memory/primary-case-contract-collision-v1",
+      "source_receipt": "github:pull/174@e1196c553ab496df13a230535de997f30c2d63ca"
+    }
+  ]
+}
