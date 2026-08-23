@@ -6,6 +6,8 @@ mod active_changes;
 mod applicability;
 #[path = "../src/finding.rs"]
 mod finding;
+#[path = "../src/provider_snapshot_applicability.rs"]
+mod provider_snapshot_applicability;
 
 use std::fs;
 use std::path::PathBuf;
