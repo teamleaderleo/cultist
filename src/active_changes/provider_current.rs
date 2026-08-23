@@ -19,6 +19,7 @@ pub struct ProviderCurrentWorkContext {
     pub head_sha: Option<String>,
 }
 
+#[allow(dead_code)]
 pub fn build_active_inventory_analysis_report_with_provider_current(
     root: &Path,
     inventory_path: &Path,
