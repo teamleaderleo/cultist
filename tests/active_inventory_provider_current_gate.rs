@@ -2,8 +2,12 @@
 
 #[path = "../src/active_changes.rs"]
 mod active_changes;
+#[path = "../src/applicability.rs"]
+mod applicability;
 #[path = "../src/finding.rs"]
 mod finding;
+#[path = "../src/provider_snapshot_applicability.rs"]
+mod provider_snapshot_applicability;
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -21,31 +21,60 @@ mod inventory {
 
     pub(crate) use provider_current::{
         ProviderCurrentWorkContext, build_active_inventory_analysis_report_with_provider_current,
+        build_active_inventory_analysis_report_with_provider_current_from_bound_bytes,
     };
 }
 
+#[path = "active_changes/provider_snapshot.rs"]
+mod provider_snapshot;
+#[allow(unused_imports)]
+pub(crate) use provider_snapshot::build_active_inventory_analysis_report_with_provider_snapshot;
+
+#[allow(unused_imports)]
 pub(crate) use inventory::{
     ProviderCurrentWorkContext, build_active_inventory_analysis_report_with_provider_current,
 };
+
+fn read_bounded_inventory(path: &Path) -> Result<Vec<u8>, Box<dyn Error>> {
+    inventory::read_bounded_inventory(path)
+}
+
+fn build_active_inventory_analysis_report_from_bound_bytes(
+    root: &Path,
+    bytes: &[u8],
+    scope: Option<&Path>,
+) -> Result<crate::finding::AnalysisReport, Box<dyn Error>> {
+    let provider_current = provider_current_from_environment()?;
+    match provider_current {
+        Some((required_repository, context)) => {
+            inventory::build_active_inventory_analysis_report_with_provider_current_from_bound_bytes(
+                root,
+                bytes,
+                scope,
+                &required_repository,
+                &context,
+            )
+        }
+        None => {
+            inventory::build_active_inventory_analysis_report_from_bound_bytes(root, bytes, scope)
+        }
+    }
+}
 
 pub fn build_active_inventory_analysis_report(
     root: &Path,
     inventory_path: &Path,
     scope: Option<&Path>,
 ) -> Result<crate::finding::AnalysisReport, Box<dyn Error>> {
-    let provider_current = provider_current_from_environment()?;
-    match provider_current {
-        Some((required_repository, context)) => {
-            build_active_inventory_analysis_report_with_provider_current(
-                root,
-                inventory_path,
-                scope,
-                &required_repository,
-                &context,
-            )
-        }
-        None => inventory::build_active_inventory_analysis_report(root, inventory_path, scope),
+    let bytes = read_bounded_inventory(inventory_path)?;
+    let raw: serde_json::Value = serde_json::from_slice(&bytes)?;
+    if raw.get("provider_snapshot_identity").is_some() {
+        return Err(
+            "provider-snapshot-bound inventory requires an explicit current provider snapshot context"
+                .into(),
+        );
     }
+    build_active_inventory_analysis_report_from_bound_bytes(root, &bytes, scope)
 }
 
 fn provider_current_from_environment()
