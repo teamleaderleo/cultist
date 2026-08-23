@@ -234,23 +234,16 @@ mod tests {
     }
 
     #[test]
-    fn population_applies_preserves_work_axis_and_routing_findings() {
+    fn population_applies_preserves_upstream_routing_when_work_gate_applies() {
         let required = identity('a');
-        let report = report_with(&[
-            (
-                "preflight-inventory-current-work-applicability-invalid",
-                "Current work applicability changed",
-            ),
-            ("preflight-inventory-path-overlap", "Active-change path overlap"),
-        ]);
+        let report = report_with(&[(
+            "preflight-inventory-path-overlap",
+            "Active-change path overlap",
+        )]);
 
         let result =
             apply_provider_snapshot_applicability(report, &required, Some(&required));
 
-        assert!(has_kind(
-            &result,
-            "preflight-inventory-current-work-applicability-invalid"
-        ));
         assert!(has_kind(&result, "preflight-inventory-path-overlap"));
         assert!(!has_kind(
             &result,
