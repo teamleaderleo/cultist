@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 from active_work_heads_up_ci import (
+    current_provider_work_from_response,
+    provider_current_environment,
+    provider_current_matches_inventory,
     quiet_status_line,
     quiet_summary,
     unresolved_endpoint_note,
@@ -10,8 +13,24 @@ from active_work_heads_up_ci import (
 INVENTORY = {
     "observed_at": "2026-08-23T00:00:00Z",
     "source": "test_provider_snapshot",
-    "current": {"id": "#10"},
+    "current": {
+        "id": "#10",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    },
 }
+
+
+def provider_response(number: int, head: str | None) -> dict[str, object]:
+    return {
+        "data": {
+            "repository": {
+                "pullRequest": {
+                    "number": number,
+                    "headRefOid": head,
+                }
+            }
+        }
+    }
 
 
 def main() -> int:
@@ -63,6 +82,75 @@ def main() -> int:
     assert unrelated == []
     assert unresolved_endpoint_note(unrelated) is None
     assert quiet_status_line(unresolved_endpoint_note(unrelated)) == clean_status
+
+    exact = current_provider_work_from_response(
+        "owner/repo",
+        10,
+        provider_response(10, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    )
+    assert exact == {
+        "repository": "owner/repo",
+        "work_id": "#10",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }
+    assert provider_current_matches_inventory(INVENTORY, "owner/repo", exact)
+
+    moved = dict(exact)
+    moved["head_sha"] = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert not provider_current_matches_inventory(INVENTORY, "owner/repo", moved)
+
+    unavailable = current_provider_work_from_response(
+        "owner/repo",
+        10,
+        {"data": {"repository": {"pullRequest": None}}},
+    )
+    assert unavailable == {
+        "repository": "owner/repo",
+        "work_id": "#10",
+        "head_sha": None,
+    }
+    assert not provider_current_matches_inventory(
+        INVENTORY, "owner/repo", unavailable
+    )
+
+    wrong_repository = dict(exact)
+    wrong_repository["repository"] = "owner/other"
+    assert not provider_current_matches_inventory(
+        INVENTORY, "owner/repo", wrong_repository
+    )
+
+    wrong_work = dict(exact)
+    wrong_work["work_id"] = "#11"
+    assert not provider_current_matches_inventory(INVENTORY, "owner/repo", wrong_work)
+
+    try:
+        current_provider_work_from_response(
+            "owner/repo",
+            10,
+            provider_response(11, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        )
+    except RuntimeError as error:
+        assert "returned #11; expected #10" in str(error)
+    else:
+        raise AssertionError("wrong provider work identity must fail closed")
+
+    stale_environment = {
+        "PATH": "/bin",
+        "CULTIST_CURRENT_PROVIDER_HEAD": "checkout-or-stale-head",
+    }
+    exact_environment = provider_current_environment(
+        stale_environment, "owner/repo", exact
+    )
+    assert exact_environment["CULTIST_REQUIRED_PROVIDER_REPOSITORY"] == "owner/repo"
+    assert exact_environment["CULTIST_CURRENT_PROVIDER_REPOSITORY"] == "owner/repo"
+    assert exact_environment["CULTIST_CURRENT_PROVIDER_WORK"] == "#10"
+    assert exact_environment["CULTIST_CURRENT_PROVIDER_HEAD"] == exact["head_sha"]
+
+    unknown_environment = provider_current_environment(
+        stale_environment, "owner/repo", unavailable
+    )
+    assert "CULTIST_CURRENT_PROVIDER_HEAD" not in unknown_environment
+    assert unknown_environment["CULTIST_CURRENT_PROVIDER_WORK"] == "#10"
 
     return 0
 

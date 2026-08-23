@@ -55,6 +55,17 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
 }
 """
 
+CURRENT_PR_QUERY = r"""
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      number
+      headRefOid
+    }
+  }
+}
+"""
+
 
 def gh_json(args: list[str]) -> object:
     output = subprocess.check_output(["gh", *args], text=True)
@@ -223,6 +234,100 @@ def build_inventory(repo: str, current_number: int) -> dict[str, object]:
     return inventory
 
 
+def current_provider_work_from_response(
+    repo: str,
+    current_number: int,
+    result: dict[str, object],
+) -> dict[str, object]:
+    data = result.get("data")
+    repository = data.get("repository") if isinstance(data, dict) else None
+    pull_request = repository.get("pullRequest") if isinstance(repository, dict) else None
+    if pull_request is None:
+        return {
+            "repository": repo,
+            "work_id": f"#{current_number}",
+            "head_sha": None,
+        }
+    if not isinstance(pull_request, dict):
+        raise RuntimeError("current pull-request response has unexpected type")
+
+    number = int(pull_request["number"])
+    if number != current_number:
+        raise RuntimeError(
+            f"current pull-request re-read returned #{number}; expected #{current_number}"
+        )
+    head = pull_request.get("headRefOid")
+    return {
+        "repository": repo,
+        "work_id": f"#{number}",
+        "head_sha": str(head) if head else None,
+    }
+
+
+def read_current_provider_work(
+    repo: str,
+    current_number: int,
+) -> dict[str, object]:
+    owner, name = repo.split("/", 1)
+    try:
+        result = graphql(
+            CURRENT_PR_QUERY,
+            {"owner": owner, "name": name, "number": current_number},
+        )
+        return current_provider_work_from_response(repo, current_number, result)
+    except (
+        subprocess.CalledProcessError,
+        json.JSONDecodeError,
+        KeyError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as error:
+        print(f"provider-current work unavailable: {error}")
+        return {
+            "repository": repo,
+            "work_id": f"#{current_number}",
+            "head_sha": None,
+        }
+
+
+def provider_current_matches_inventory(
+    inventory: dict[str, object],
+    required_repository: str,
+    provider_current: dict[str, object],
+) -> bool:
+    current = inventory.get("current")
+    if not isinstance(current, dict):
+        raise RuntimeError("current work item must be an object")
+    head = provider_current.get("head_sha")
+    return (
+        str(provider_current.get("repository", "")) == required_repository
+        and str(provider_current.get("work_id", "")) == str(current.get("id", ""))
+        and isinstance(head, str)
+        and bool(head)
+        and head == str(current.get("head_sha", ""))
+    )
+
+
+def provider_current_environment(
+    base: dict[str, str],
+    required_repository: str,
+    provider_current: dict[str, object],
+) -> dict[str, str]:
+    environment = dict(base)
+    environment["CULTIST_REQUIRED_PROVIDER_REPOSITORY"] = required_repository
+    environment["CULTIST_CURRENT_PROVIDER_REPOSITORY"] = str(
+        provider_current["repository"]
+    )
+    environment["CULTIST_CURRENT_PROVIDER_WORK"] = str(provider_current["work_id"])
+    head = provider_current.get("head_sha")
+    if isinstance(head, str) and head:
+        environment["CULTIST_CURRENT_PROVIDER_HEAD"] = head
+    else:
+        environment.pop("CULTIST_CURRENT_PROVIDER_HEAD", None)
+    return environment
+
+
 def potential_direct_overlap(inventory: dict[str, object]) -> bool:
     current = inventory["current"]
     active_work = inventory["active_work"]
@@ -305,6 +410,7 @@ def unresolved_endpoint_note(receipts: list[dict[str, object]]) -> str | None:
         f"{count} {noun} absent from the supplied work inventory; "
         "current coordination relevance remains unresolved."
     )
+
 
 def quiet_status_line(metadata_note: str | None = None) -> str:
     if metadata_note:
@@ -402,10 +508,17 @@ def render_product_summary(
     return "\n".join(lines)
 
 
-def run_product_preflight(inventory: dict[str, object]) -> dict[str, object]:
+def run_product_preflight(
+    inventory: dict[str, object],
+    required_repository: str,
+    provider_current: dict[str, object],
+) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="cultist-active-work-") as temporary:
         inventory_path = Path(temporary, "inventory.json")
         inventory_path.write_text(json.dumps(inventory, indent=2) + "\n")
+        environment = provider_current_environment(
+            dict(os.environ), required_repository, provider_current
+        )
         output = subprocess.check_output(
             [
                 "cargo",
@@ -420,6 +533,7 @@ def run_product_preflight(inventory: dict[str, object]) -> dict[str, object]:
                 ".",
             ],
             text=True,
+            env=environment,
         )
     report = json.loads(output)
     if not isinstance(report, dict):
@@ -434,6 +548,7 @@ def main() -> None:
     inventory_started = time.monotonic()
     inventory, metadata = build_inventory_and_metadata(repo, current_number)
     inventory_seconds = time.monotonic() - inventory_started
+    provider_current = read_current_provider_work(repo, current_number)
 
     current = inventory["current"]
     if not isinstance(current, dict):
@@ -442,9 +557,15 @@ def main() -> None:
     if not isinstance(active_work, list):
         raise RuntimeError("active_work must be a list")
 
+    current_head = provider_current.get("head_sha")
+    current_head_label = str(current_head) if current_head else "<unavailable>"
     print(
         f"inventory: {len(active_work)} open PR(s), current #{current_number}, "
         f"{len(current['changed_paths'])} current path(s)"
+    )
+    print(
+        "provider-current work: "
+        f"{provider_current['repository']} {provider_current['work_id']} @ {current_head_label}"
     )
 
     direct_overlap = potential_direct_overlap(inventory)
@@ -485,7 +606,10 @@ def main() -> None:
         coordination_seconds = time.monotonic() - started
 
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if not direct_overlap and not relevant_edges:
+    exact_current_work = provider_current_matches_inventory(
+        inventory, repo, provider_current
+    )
+    if not direct_overlap and not relevant_edges and exact_current_work:
         print(quiet_status_line(metadata_note))
         print(
             f"timing: inventory {inventory_seconds:.2f}s; "
@@ -500,7 +624,7 @@ def main() -> None:
         inventory["coordination_edges"] = relevant_edges
 
     product_started = time.monotonic()
-    report = run_product_preflight(inventory)
+    report = run_product_preflight(inventory, repo, provider_current)
     product_seconds = time.monotonic() - product_started
     findings = report.get("findings")
     finding_count = len(findings) if isinstance(findings, list) else 0
