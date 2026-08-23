@@ -20,7 +20,7 @@ struct Commit {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum RustEditClass {
+pub(crate) enum RustEditClass {
     SyntaxChanged,
     CommentsOrWhitespaceOnly,
     Unclassified,
@@ -230,7 +230,7 @@ fn commit_metadata(root: &Path, sha: &str) -> Result<(String, BTreeSet<PathBuf>)
     Ok((subject.trim().to_string(), paths))
 }
 
-fn classify_rust_edit(root: &Path, sha: &str, anchor: &Path) -> RustEditClass {
+pub(crate) fn classify_rust_edit(root: &Path, sha: &str, anchor: &Path) -> RustEditClass {
     let after = source_at_revision(root, sha, anchor);
     let before = source_at_revision(root, &format!("{sha}^"), anchor);
     let (Some(before), Some(after)) = (before, after) else {
