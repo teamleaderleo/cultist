@@ -4,7 +4,10 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::applicability::{EvaluationContext, EvidenceRequirements};
+use crate::applicability::{
+    APPLICABILITY_SCHEMA_VERSION, ApplicabilityQuery, ApplicabilityStatus, EvaluationContext,
+    EvidenceRequirements, evaluate_query,
+};
 use crate::durable_obligation::{
     ClearingCondition, DURABLE_OBLIGATION_SCHEMA_VERSION, DiscriminatorKey, DurableObligation,
 };
@@ -14,7 +17,7 @@ use crate::evidence_planner::{
 };
 use crate::observation_frontier::{ObservationFrontierReceipt, ObservationFrontierStatus};
 
-pub const OBSERVATION_PROBE_BRIDGE_SCHEMA_VERSION: u32 = 1;
+pub const OBSERVATION_PROBE_BRIDGE_SCHEMA_VERSION: u32 = 2;
 pub const MAX_OBSERVATION_PROBE_PLAN_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_BRIDGES: usize = 128;
 const MAX_ID_BYTES: usize = 256;
@@ -36,6 +39,7 @@ pub struct ObservationProbeBridge {
 pub struct ObservationProbePlanRequest {
     pub schema_version: u32,
     pub frontier: ObservationFrontierReceipt,
+    pub frontier_requirements: EvidenceRequirements,
     pub bridges: Vec<ObservationProbeBridge>,
     pub context: EvaluationContext,
     pub probes: Vec<EvidenceProbe>,
@@ -58,6 +62,7 @@ pub struct ObservationProbePlan {
     pub observation_discriminator_id: String,
     pub observation_subject_ref: String,
     pub frontier_status: ObservationFrontierStatus,
+    pub applicability_status: ApplicabilityStatus,
     pub status: ObservationProbePlanStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bridge_id: Option<String>,
@@ -109,9 +114,13 @@ pub fn plan_observation_probe(
     validate_request(request)?;
 
     let frontier = &request.frontier;
-    if frontier.status == ObservationFrontierStatus::Current {
+    let applicability_status = evaluate_frontier_applicability(request)?;
+    if frontier.status == ObservationFrontierStatus::Current
+        && applicability_status == ApplicabilityStatus::Applies
+    {
         return Ok(base_plan(
             frontier,
+            applicability_status,
             ObservationProbePlanStatus::AlreadyCurrent,
         ));
     }
@@ -125,6 +134,7 @@ pub fn plan_observation_probe(
     let Some(bridge) = matching.first().copied() else {
         return Ok(base_plan(
             frontier,
+            applicability_status,
             ObservationProbePlanStatus::NoAdmittedMapping,
         ));
     };
@@ -162,6 +172,7 @@ pub fn plan_observation_probe(
         observation_discriminator_id: frontier.discriminator_id.clone(),
         observation_subject_ref: frontier.subject_ref.clone(),
         frontier_status: frontier.status,
+        applicability_status,
         status: ObservationProbePlanStatus::Planned,
         bridge_id: Some(bridge.bridge_id.clone()),
         bridge_source_receipt: Some(bridge.source_receipt.clone()),
@@ -169,8 +180,25 @@ pub fn plan_observation_probe(
     })
 }
 
+fn evaluate_frontier_applicability(
+    request: &ObservationProbePlanRequest,
+) -> Result<ApplicabilityStatus, ObservationProbeBridgeError> {
+    evaluate_query(&ApplicabilityQuery {
+        schema_version: APPLICABILITY_SCHEMA_VERSION,
+        requirements: request.frontier_requirements.clone(),
+        context: request.context.clone(),
+    })
+    .map(|evaluation| evaluation.status)
+    .map_err(|error| {
+        ObservationProbeBridgeError::new(format!(
+            "frontier applicability evaluation failed: {error}"
+        ))
+    })
+}
+
 fn base_plan(
     frontier: &ObservationFrontierReceipt,
+    applicability_status: ApplicabilityStatus,
     status: ObservationProbePlanStatus,
 ) -> ObservationProbePlan {
     ObservationProbePlan {
@@ -178,6 +206,7 @@ fn base_plan(
         observation_discriminator_id: frontier.discriminator_id.clone(),
         observation_subject_ref: frontier.subject_ref.clone(),
         frontier_status: frontier.status,
+        applicability_status,
         status,
         bridge_id: None,
         bridge_source_receipt: None,
@@ -203,6 +232,7 @@ fn validate_request(
         )));
     }
     validate_frontier(&request.frontier)?;
+    evaluate_frontier_applicability(request)?;
     if request.bridges.len() > MAX_BRIDGES {
         return Err(ObservationProbeBridgeError::new(
             "observation probe bridges exceed the admitted boundary",

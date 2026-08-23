@@ -15,7 +15,7 @@ mod observation_frontier;
 #[path = "../src/observation_probe_bridge.rs"]
 mod observation_probe_bridge;
 
-use applicability::{EvaluationContext, EvidenceRequirements};
+use applicability::{ApplicabilityStatus, EvaluationContext, EvidenceRequirements};
 use durable_obligation::DiscriminatorKey;
 use evidence_planner::{
     EvidencePlanStatus, EvidenceProbe, ProbeCandidateStatus, ProbeCost, ProbeEffect,
@@ -158,6 +158,7 @@ fn request(
     ObservationProbePlanRequest {
         schema_version: OBSERVATION_PROBE_BRIDGE_SCHEMA_VERSION,
         frontier,
+        frontier_requirements: requirements(Some("head-a")),
         bridges,
         context,
         probes,
@@ -200,6 +201,7 @@ fn exact_source_bridge_selects_capable_probe_and_rejects_similar_name_as_incapab
     .unwrap();
 
     assert_eq!(plan.status, ObservationProbePlanStatus::Planned);
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Applies);
     let evidence = plan.evidence_plan.unwrap();
     assert_eq!(evidence.status, EvidencePlanStatus::Selected);
     assert_eq!(evidence.selected.unwrap().id, "mapped-source-probe");
@@ -236,6 +238,7 @@ fn similarly_named_probe_without_explicit_bridge_leaves_frontier_unmapped() {
     .unwrap();
 
     assert_eq!(plan.status, ObservationProbePlanStatus::NoAdmittedMapping);
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Applies);
     assert!(plan.evidence_plan.is_none());
 }
 
@@ -257,10 +260,11 @@ fn bridge_for_wrong_subject_does_not_map_required_frontier() {
     .unwrap();
 
     assert_eq!(plan.status, ObservationProbePlanStatus::NoAdmittedMapping);
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Applies);
 }
 
 #[test]
-fn current_frontier_needs_no_acquisition_plan() {
+fn current_frontier_needs_no_acquisition_plan_while_applicability_still_applies() {
     let subject = "commit:subject-a";
     let plan = plan_observation_probe(&request(
         current_frontier(subject),
@@ -278,7 +282,35 @@ fn current_frontier_needs_no_acquisition_plan() {
     .unwrap();
 
     assert_eq!(plan.status, ObservationProbePlanStatus::AlreadyCurrent);
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Applies);
     assert!(plan.evidence_plan.is_none());
+}
+
+#[test]
+fn current_frontier_with_moved_context_can_plan_refresh() {
+    let subject = "commit:subject-a";
+    let plan = plan_observation_probe(&request(
+        current_frontier(subject),
+        vec![bridge(subject, "head-b")],
+        context(Some("head-b")),
+        vec![probe(
+            "refresh-current-head",
+            probe_key(),
+            Some("head-b"),
+            ProbeEffect::ReadOnly,
+            ProbeCost::default(),
+        )],
+        false,
+    ))
+    .unwrap();
+
+    assert_eq!(plan.frontier_status, ObservationFrontierStatus::Current);
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Invalid);
+    assert_eq!(plan.status, ObservationProbePlanStatus::Planned);
+    assert_eq!(
+        plan.evidence_plan.unwrap().selected.unwrap().id,
+        "refresh-current-head"
+    );
 }
 
 #[test]
@@ -300,6 +332,7 @@ fn unknown_value_with_current_coordinate_can_plan_deeper_acquisition() {
     .unwrap();
 
     assert_eq!(plan.frontier_status, ObservationFrontierStatus::Unknown);
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Applies);
     assert_eq!(
         plan.evidence_plan.unwrap().status,
         EvidencePlanStatus::Selected
@@ -325,6 +358,7 @@ fn invalid_old_value_can_plan_current_head_refresh_without_becoming_current() {
     .unwrap();
 
     assert_eq!(plan.frontier_status, ObservationFrontierStatus::Invalid);
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Invalid);
     let evidence = plan.evidence_plan.unwrap();
     assert_eq!(evidence.status, EvidencePlanStatus::Selected);
     assert_eq!(evidence.selected.unwrap().id, "refresh-current-head");
@@ -348,6 +382,7 @@ fn missing_current_coordinate_stays_blocked_in_existing_planner() {
     ))
     .unwrap();
 
+    assert_eq!(plan.applicability_status, ApplicabilityStatus::Unknown);
     let evidence = plan.evidence_plan.unwrap();
     assert_eq!(evidence.status, EvidencePlanStatus::Blocked);
     assert_eq!(
@@ -416,6 +451,26 @@ fn incoherent_frontier_receipt_rejects_before_planning() {
     .unwrap_err();
 
     assert!(error.to_string().contains("status disagrees"));
+}
+
+#[test]
+fn empty_frontier_requirements_fail_closed() {
+    let subject = "commit:subject-a";
+    let mut request = request(
+        current_frontier(subject),
+        Vec::new(),
+        context(Some("head-a")),
+        Vec::new(),
+        false,
+    );
+    request.frontier_requirements = EvidenceRequirements::default();
+
+    let error = plan_observation_probe(&request).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("at least one explicit applicability requirement")
+    );
 }
 
 #[test]
