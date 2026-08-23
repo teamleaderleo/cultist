@@ -27,6 +27,7 @@ mod inventory {
 
 #[path = "active_changes/provider_snapshot.rs"]
 mod provider_snapshot;
+#[allow(unused_imports)]
 pub(crate) use provider_snapshot::build_active_inventory_analysis_report_with_provider_snapshot;
 
 #[allow(unused_imports)]
