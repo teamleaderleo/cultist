@@ -14,7 +14,7 @@ import time
 COORDINATION_PREFIX = "Do not merge while #"
 
 PR_PAGE_QUERY = r"""
-query($owner: String!, $name: String!, $after: String) {
+query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
     pullRequests(
       states: OPEN
@@ -37,19 +37,6 @@ query($owner: String!, $name: String!, $after: String) {
         }
       }
       pageInfo { hasNextPage endCursor }
-    }
-  }
-}
-"""
-
-PR_FILES_QUERY = r"""
-query($owner: String!, $name: String!, $number: Int!, $after: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      files(first: 100, after: $after) {
-        nodes { path }
-        pageInfo { hasNextPage endCursor }
-      }
     }
   }
 }
@@ -99,48 +86,22 @@ def file_paths_from_connection(connection: dict[str, object]) -> list[str]:
     return [str(node["path"]) for node in nodes if isinstance(node, dict)]
 
 
-def remaining_file_paths(
-    owner: str,
-    name: str,
-    number: int,
-    after: str | None,
-) -> list[str]:
-    paths: list[str] = []
-    cursor = after
-    while cursor is not None:
-        result = graphql(
-            PR_FILES_QUERY,
-            {"owner": owner, "name": name, "number": number, "after": cursor},
-        )
-        data = result.get("data")
-        repository = data.get("repository") if isinstance(data, dict) else None
-        pull_request = (
-            repository.get("pullRequest") if isinstance(repository, dict) else None
-        )
-        files = pull_request.get("files") if isinstance(pull_request, dict) else None
-        if not isinstance(files, dict):
-            raise RuntimeError(f"could not paginate files for PR #{number}")
-        paths.extend(file_paths_from_connection(files))
-        has_next, cursor = page_info(files)
-        if not has_next:
-            break
-    return paths
-
-
-def work_item(
-    owner: str,
-    name: str,
-    node: dict[str, object],
-) -> dict[str, object]:
+def work_item(node: dict[str, object]) -> dict[str, object]:
     number = int(node["number"])
     files = node.get("files")
     if not isinstance(files, dict):
         raise RuntimeError(f"PR #{number} has no readable files connection")
 
     paths = file_paths_from_connection(files)
-    has_next, cursor = page_info(files)
+    has_next, _cursor = page_info(files)
     if has_next:
-        paths.extend(remaining_file_paths(owner, name, number, cursor))
+        # Exact work identity binds head and changed paths to one provider
+        # response. Cross-request pagination cannot prove that the later
+        # pages belong to the observed head, so fail closed instead of
+        # mixing coordinates across reads.
+        raise RuntimeError(
+            f"PR #{number} requires file pagination; exact snapshot unavailable"
+        )
 
     return {
         "id": f"#{number}",
@@ -175,35 +136,37 @@ def build_inventory_and_metadata(
     owner, name = repo.split("/", 1)
     work: list[dict[str, object]] = []
     metadata_work: list[dict[str, object]] = []
-    cursor: str | None = None
 
-    while True:
-        result = graphql(
-            PR_PAGE_QUERY,
-            {"owner": owner, "name": name, "after": cursor},
+    result = graphql(
+        PR_PAGE_QUERY,
+        {"owner": owner, "name": name},
+    )
+    data = result.get("data")
+    repository = data.get("repository") if isinstance(data, dict) else None
+    pull_requests = (
+        repository.get("pullRequests") if isinstance(repository, dict) else None
+    )
+    if not isinstance(pull_requests, dict):
+        raise RuntimeError("could not retrieve open pull requests")
+    nodes = pull_requests.get("nodes")
+    if not isinstance(nodes, list):
+        raise RuntimeError("open pull-request connection is missing nodes")
+
+    has_next, _cursor = page_info(pull_requests)
+    if has_next:
+        # Exact provider population identity must come from one response.
+        # Following cursors across requests cannot prove the later pages
+        # belong to the same provider population snapshot.
+        raise RuntimeError(
+            "provider population requires pull-request pagination; "
+            "exact snapshot unavailable"
         )
-        data = result.get("data")
-        repository = data.get("repository") if isinstance(data, dict) else None
-        pull_requests = (
-            repository.get("pullRequests") if isinstance(repository, dict) else None
-        )
-        if not isinstance(pull_requests, dict):
-            raise RuntimeError("could not retrieve open pull requests")
-        nodes = pull_requests.get("nodes")
-        if not isinstance(nodes, list):
-            raise RuntimeError("open pull-request connection is missing nodes")
 
-        for node in nodes:
-            if not isinstance(node, dict):
-                continue
-            work.append(work_item(owner, name, node))
-            metadata_work.append(metadata_item(node))
-
-        has_next, cursor = page_info(pull_requests)
-        if not has_next:
-            break
-        if cursor is None:
-            raise RuntimeError("pull-request pagination promised another page without cursor")
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        work.append(work_item(node))
+        metadata_work.append(metadata_item(node))
 
     current = next((item for item in work if item["id"] == f"#{current_number}"), None)
     if current is None:

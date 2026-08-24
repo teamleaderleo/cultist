@@ -17,10 +17,14 @@ def provider_response(
     file_count: int = 1,
     first_total: int | None = None,
     last_total: int | None = None,
+    first_paths: list[str] | None = None,
+    last_paths: list[str] | None = None,
 ) -> dict[str, object]:
     paths = [f"src/file_{index:03d}.rs" for index in range(file_count)]
-    first_paths = paths[:100]
-    last_paths = paths[-100:] if paths else []
+    if first_paths is None:
+        first_paths = paths[:100]
+    if last_paths is None:
+        last_paths = paths[-100:] if paths else []
     return {
         "data": {
             "repository": {
@@ -129,6 +133,8 @@ def main() -> None:
         assert calls[0] == {"owner": "owner", "name": "repo"}, calls[0]
         assert inventory["source"] == "github_pull_requests_graphql_single_read"
         assert inventory["current"]["id"] == "#10"
+        assert inventory["current"]["head_sha"] == "a" * 40
+        assert metadata["work"][0]["head_sha"] == "a" * 40
         assert inventory["active_work"][0]["changed_paths"] == ["src/file_000.rs"]
         assert metadata["work"][0]["id"] == "#10"
         assert read_current_provider_snapshot("owner/repo", 10) is not None
@@ -140,6 +146,21 @@ def main() -> None:
         assert "src/file_000.rs" in changed_paths
         assert "src/file_101.rs" in changed_paths
         assert read_current_provider_snapshot("owner/repo", 10) is not None
+
+        # Duplicated entries within one slice collapse into the unique union;
+        # admission still requires the union to equal the provider count.
+        base.graphql = lambda _query, _variables: provider_response(
+            first_total=3,
+            last_total=3,
+            first_paths=["src/a.rs", "src/a.rs", "src/b.rs"],
+            last_paths=["src/b.rs", "src/c.rs"],
+        )
+        inventory, _metadata = build_single_read_inventory_and_metadata("owner/repo", 10)
+        assert inventory["current"]["changed_paths"] == [
+            "src/a.rs",
+            "src/b.rs",
+            "src/c.rs",
+        ], inventory["current"]["changed_paths"]
 
         base.graphql = lambda _query, _variables: provider_response(
             pull_requests_has_next=True
@@ -164,6 +185,21 @@ def main() -> None:
         assert_runtime_error(
             lambda: build_single_read_inventory_and_metadata("owner/repo", 10),
             "provider file counts disagree within one response: 102 != 103",
+        )
+        assert read_current_provider_snapshot("owner/repo", 10) is None
+
+        # Over-coverage is also inconsistent: a response whose bounded slices
+        # yield more unique paths than the provider count cannot prove exact
+        # membership and must fail closed instead of admitting a superset.
+        base.graphql = lambda _query, _variables: provider_response(
+            first_total=2,
+            last_total=2,
+            first_paths=["src/a.rs", "src/b.rs"],
+            last_paths=["src/b.rs", "src/c.rs"],
+        )
+        assert_runtime_error(
+            lambda: build_single_read_inventory_and_metadata("owner/repo", 10),
+            "one-response file coverage incomplete for PR #10: 3 of 2",
         )
         assert read_current_provider_snapshot("owner/repo", 10) is None
     finally:
