@@ -76,10 +76,7 @@ fn pr_156_metadata_only_rewrite_could_reuse_the_successful_receipt() {
         git(&["show", "-s", "--format=%T", CURRENT_HEAD]),
         SHARED_TREE
     );
-    assert_eq!(
-        git(&["rev-parse", &format!("{TESTED_HEAD}^")]),
-        SHARED_BASE
-    );
+    assert_eq!(git(&["rev-parse", &format!("{TESTED_HEAD}^")]), SHARED_BASE);
     assert_eq!(
         git(&["rev-parse", &format!("{CURRENT_HEAD}^")]),
         SHARED_BASE
