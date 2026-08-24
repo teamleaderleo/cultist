@@ -180,6 +180,63 @@ fn level_token(level: ClaimKind) -> &'static str {
     }
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum MutationKind {
+    Support,
+    Counterexample,
+    Limit,
+    Clearing,
+}
+
+impl MutationKind {
+    fn role(self) -> EvidenceRole {
+        match self {
+            Self::Support => EvidenceRole::Support,
+            Self::Counterexample => EvidenceRole::Counterexample,
+            Self::Limit => EvidenceRole::Limit,
+            Self::Clearing => EvidenceRole::Clearing,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum MutationVerdict {
+    Survived,
+    Killed,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+struct MutationReceipt {
+    mutation: MutationKind,
+    before: NextAction,
+    after: NextAction,
+    verdict: MutationVerdict,
+}
+
+fn mutate(case: &ProjectionCase, mutation: MutationKind) -> ProjectionCase {
+    let mut mutated = case.clone();
+    mutated
+        .evidence
+        .retain(|evidence| evidence.role != mutation.role());
+    mutated
+}
+
+fn mutation_receipt(case: &ProjectionCase, mutation: MutationKind) -> MutationReceipt {
+    let before = required_action(case);
+    let after = required_action(&mutate(case, mutation));
+    let verdict = if before == after {
+        MutationVerdict::Survived
+    } else {
+        MutationVerdict::Killed
+    };
+    MutationReceipt {
+        mutation,
+        before,
+        after,
+        verdict,
+    }
+}
+
 #[test]
 fn actual_terse_renderer_collapses_scope_limit_that_changes_action() {
     let unrestricted = ProjectionCase::new(
@@ -304,5 +361,122 @@ fn role_aware_unknown_without_clearing_evidence_stays_hold() {
     assert_eq!(
         action_from_role_aware_projection(&projection),
         NextAction::Hold
+    );
+}
+
+#[test]
+fn mutation_testing_accepts_support_omission_in_support_only_case() {
+    let case = ProjectionCase::new(
+        "support-only-mutation",
+        ClaimKind::Proven,
+        "exact fixture replay passed",
+        vec![support("fixture A passed"), support("fixture B passed")],
+    );
+
+    assert_eq!(
+        mutation_receipt(&case, MutationKind::Support),
+        MutationReceipt {
+            mutation: MutationKind::Support,
+            before: NextAction::Proceed,
+            after: NextAction::Proceed,
+            verdict: MutationVerdict::Survived,
+        }
+    );
+}
+
+#[test]
+fn mutation_testing_kills_hidden_limit_omission() {
+    let case = ProjectionCase::new(
+        "limit-mutation",
+        ClaimKind::Proven,
+        "target test passed",
+        vec![
+            support("target execution passed"),
+            limit("receipt is valid only for linux-x86_64"),
+        ],
+    );
+
+    assert_eq!(
+        mutation_receipt(&case, MutationKind::Limit),
+        MutationReceipt {
+            mutation: MutationKind::Limit,
+            before: NextAction::RestrictScope,
+            after: NextAction::Proceed,
+            verdict: MutationVerdict::Killed,
+        }
+    );
+}
+
+#[test]
+fn mutation_testing_kills_counterexample_omission() {
+    let case = ProjectionCase::new(
+        "counterexample-mutation",
+        ClaimKind::Observed,
+        "helper is the local precedent",
+        vec![
+            support("six nearby callers use helper"),
+            counterexample("one reviewed exception matches this change scope"),
+        ],
+    );
+
+    assert_eq!(
+        mutation_receipt(&case, MutationKind::Counterexample),
+        MutationReceipt {
+            mutation: MutationKind::Counterexample,
+            before: NextAction::ReconcileException,
+            after: NextAction::Proceed,
+            verdict: MutationVerdict::Killed,
+        }
+    );
+}
+
+#[test]
+fn mutation_testing_kills_clearing_omission() {
+    let case = ProjectionCase::new(
+        "clearing-mutation",
+        ClaimKind::Unknown,
+        "merge eligibility is unresolved",
+        vec![
+            support("exact target execution is absent"),
+            clearing("run exact target execution at current head"),
+        ],
+    );
+
+    assert_eq!(
+        mutation_receipt(&case, MutationKind::Clearing),
+        MutationReceipt {
+            mutation: MutationKind::Clearing,
+            before: NextAction::ExecuteClearingStep,
+            after: NextAction::Hold,
+            verdict: MutationVerdict::Killed,
+        }
+    );
+}
+
+#[test]
+fn survived_mutation_is_fixture_local_when_another_role_already_controls_action() {
+    let case = ProjectionCase::new(
+        "masked-counterexample-mutation",
+        ClaimKind::Observed,
+        "helper is the local precedent",
+        vec![
+            support("six nearby callers use helper"),
+            counterexample("one reviewed exception matches this change scope"),
+            limit("current evidence applies only to the target package"),
+        ],
+    );
+
+    assert_eq!(
+        mutation_receipt(&case, MutationKind::Counterexample),
+        MutationReceipt {
+            mutation: MutationKind::Counterexample,
+            before: NextAction::RestrictScope,
+            after: NextAction::RestrictScope,
+            verdict: MutationVerdict::Survived,
+        }
+    );
+    assert_ne!(
+        role_aware_projection(&case),
+        role_aware_projection(&mutate(&case, MutationKind::Counterexample))
     );
 }
