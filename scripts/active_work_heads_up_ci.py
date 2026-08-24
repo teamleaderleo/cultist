@@ -19,7 +19,6 @@ query($owner: String!, $name: String!) {
     pullRequests(
       states: OPEN
       first: 100
-      after: $after
       orderBy: {field: UPDATED_AT, direction: DESC}
     ) {
       nodes {

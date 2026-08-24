@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import active_work_heads_up_ci as base
 from active_work_heads_up_ci import (
     PR_PAGE_QUERY,
@@ -209,6 +211,16 @@ def main() -> int:
     )
     assert "CULTIST_CURRENT_PROVIDER_HEAD" not in unknown_environment
     assert unknown_environment["CULTIST_CURRENT_PROVIDER_WORK"] == "#10"
+
+    # A GraphQL document that uses an undeclared variable is rejected with
+    # variableNotDefined before any runtime fail-closed logic can run, so
+    # prove the pagination document declares every variable it uses.
+    header = re.search(r"query\s*\(([^)]*)\)", PR_PAGE_QUERY)
+    assert header is not None, PR_PAGE_QUERY
+    declared = set(re.findall(r"\$(\w+)\s*:", header.group(1)))
+    used = set(re.findall(r"\$(\w+)", PR_PAGE_QUERY[header.end():]))
+    undeclared = sorted(used - declared)
+    assert not undeclared, f"PR_PAGE_QUERY uses undeclared variables: {undeclared}"
 
     # Exact work identity binds head and changed paths to one provider
     # response. Any required pagination must fail closed instead of mixing
