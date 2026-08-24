@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "trial_id": "prior-episode-front:stensibly-index-guard-detail",
+  "plan_fingerprint": "cultist-behavioral-trial-plan-sha256-v1:1aca6332c77ed72b49cb20593f215c7eb2952121ad9bf3d5ae60bea0df5df024",
+  "execution_order_packet_fingerprints": [
+    "cultist-behavioral-worker-packet-sha256-v1:5fa460fe007276013ed019830daaf9fc8d086cc5d3d5dfdfc5dd33a58052887d",
+    "cultist-behavioral-worker-packet-sha256-v1:a80303b59b9a46c5f4e6adb446abb01fbaeb5d898911bf6ad1248b3b0cf38549"
+  ],
+  "sequence_indexes": [
+    1,
+    2
+  ],
+  "session_ids": [
+    "01a03613-ab0c-7970-b38e-5c734e920e3b",
+    "01a03613-ab37-7d82-8ac5-5b53b32de3cb"
+  ],
+  "freshness_receipts": [
+    "codex-cli-events-sha256:91ab1027b5d125f91e341294bb88fe1fdd73b1af343c36b1032692600833f6e8",
+    "codex-cli-events-sha256:9fc9f94c9d4542f0f4725219037a38340e9aa2bee17213537c951a71e9c07f83"
+  ],
+  "worker_refs": [
+    "worker-85cecf2608ad-20260825-0001",
+    "worker-stensibly-85cecf26-20260825-001"
+  ],
+  "verdict": "admitted",
+  "reasons": [],
+  "frozen_identity_match": true,
+  "fresh_uncontaminated_sessions": true,
+  "distinct_arm_coverage": true,
+  "behavioral_evaluation": {
+    "schema_version": 1,
+    "trial": {
+      "schema_version": 1,
+      "trial_id": "prior-episode-front:stensibly-index-guard-detail",
+      "plan_fingerprint": "cultist-behavioral-trial-plan-sha256-v1:1aca6332c77ed72b49cb20593f215c7eb2952121ad9bf3d5ae60bea0df5df024",
+      "control": {
+        "worker_packet_fingerprint": "cultist-behavioral-worker-packet-sha256-v1:5fa460fe007276013ed019830daaf9fc8d086cc5d3d5dfdfc5dd33a58052887d",
+        "worker_ref": "worker-85cecf2608ad-20260825-0001",
+        "first_action_id": "inspect_accepted_guard_detail"
+      },
+      "treatment": {
+        "worker_packet_fingerprint": "cultist-behavioral-worker-packet-sha256-v1:a80303b59b9a46c5f4e6adb446abb01fbaeb5d898911bf6ad1248b3b0cf38549",
+        "worker_ref": "worker-stensibly-85cecf26-20260825-001",
+        "first_action_id": "inspect_accepted_guard_detail"
+      },
+      "same_first_action": true
+    },
+    "worker_identity": "openai:gpt-5.6-luna:max",
+    "harness_identity": "codex-cli:0.146.0:chatgpt-auth:ephemeral-v1",
+    "affordance_identity": "stdin-packet:read-only:no-search:json-schema-v1",
+    "sampling_config_sha256": "sha256:4fd03ccfd05f841af5acc11007b6bbd9f72def171a45c2cb365c9fb781438297",
+    "control_sequence_index": 1,
+    "treatment_sequence_index": 2,
+    "control_session_id": "01a03613-ab0c-7970-b38e-5c734e920e3b",
+    "treatment_session_id": "01a03613-ab37-7d82-8ac5-5b53b32de3cb",
+    "control_freshness_receipt": "codex-cli-events-sha256:91ab1027b5d125f91e341294bb88fe1fdd73b1af343c36b1032692600833f6e8",
+    "treatment_freshness_receipt": "codex-cli-events-sha256:9fc9f94c9d4542f0f4725219037a38340e9aa2bee17213537c951a71e9c07f83"
+  },
+  "automatic_effect_claim": false,
+  "automatic_generalization": false
+}

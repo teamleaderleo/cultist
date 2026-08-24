@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "trial_id",
+    "plan_fingerprint",
+    "worker_packet_fingerprint",
+    "worker_ref",
+    "first_action_id"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer" },
+    "trial_id": { "type": "string" },
+    "plan_fingerprint": { "type": "string" },
+    "worker_packet_fingerprint": { "type": "string" },
+    "worker_ref": {
+      "type": "string",
+      "description": "A session-local, unique worker run reference chosen for this fresh execution."
+    },
+    "first_action_id": {
+      "type": "string",
+      "enum": [
+        "block_patch",
+        "inspect_accepted_guard_detail",
+        "approve_patch",
+        "inspect_more_repository_context"
+      ]
+    }
+  }
+}

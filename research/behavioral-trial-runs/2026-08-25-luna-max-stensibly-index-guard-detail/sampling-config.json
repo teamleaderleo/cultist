@@ -1,0 +1,12 @@
+{
+  "approval_policy": "never",
+  "codex_cli_version": "0.146.0",
+  "ephemeral": true,
+  "ignore_user_config": true,
+  "live_web_search": false,
+  "model": "gpt-5.6-luna",
+  "output_schema_sha256": "a9c4b713ec776cf9a24b7754dd609ead1c72bc3501720abc5aeab794f8bcfa2a",
+  "reasoning_effort": "max",
+  "repository_context": false,
+  "sandbox": "read-only"
+}
