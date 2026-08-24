@@ -85,6 +85,8 @@ Cultist's own PR CI dogfoods a GitHub adapter for this contract. Common disjoint
 
 Current main now binds that provider-backed dogfood to an explicit provider snapshot identity instead of treating one fetched inventory as timeless truth. The consumer revalidates the observed frontier when it uses the snapshot, preserves `UNKNOWN` when coordination/provider evidence is unresolved, and refuses to manufacture complete file coverage from paginated or partial observations. Complete bounded file coverage is asserted only when one provider response actually proves the selected union. These are landed correctness rules in the active-change path, not future research notes.
 
+Every shipped provider producer binds work identity and changed paths to exactly one GraphQL response: any required pagination, pull-request or file continuation, fails closed as unavailable instead of combining coordinates across reads. Whether the provider's cursors pin separate requests to one immutable snapshot remains `UNKNOWN` — official documentation does not establish it, so populations beyond one response and file sets whose bounded union cannot prove completeness stay unavailable by design until a controlled replay proves otherwise.
+
 ### Historical companions
 
 `cargo cultist history FILE` explores which paths repeatedly changed with one current file in recent non-merge history.

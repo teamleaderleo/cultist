@@ -122,7 +122,7 @@ def build_single_read_inventory_and_metadata(
             "nodes": [{"path": path} for path in paths],
             "pageInfo": {"hasNextPage": False, "endCursor": None},
         }
-        work.append(base.work_item(owner, name, normalized_node))
+        work.append(base.work_item(normalized_node))
         metadata_work.append(base.metadata_item(node))
 
     current = next((item for item in work if item["id"] == f"#{current_number}"), None)
