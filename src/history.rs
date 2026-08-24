@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::File;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::process::Command;
+use std::process::{Child, Stdio};
+use std::thread;
 
 use serde::Serialize;
 
@@ -93,6 +95,7 @@ pub struct HistoryReport {
 struct HistoricalCommit {
     summary: CommitSummary,
     paths: Vec<PathBuf>,
+    changed_paths: usize,
 }
 
 pub fn analyze_historical_companions(
@@ -110,7 +113,7 @@ pub fn analyze_historical_companions(
         return Err("history broad-commit threshold must be greater than zero".into());
     }
 
-    let commits = read_anchor_history(root, anchor, options.max_commits)?;
+    let commits = read_anchor_history(root, anchor, options)?;
     let discovered_commits = commits.len();
     let mut considered = Vec::new();
     let mut excluded_commits = Vec::new();
@@ -120,21 +123,22 @@ pub fn analyze_historical_companions(
             excluded_commits.push(ExcludedCommit {
                 commit: commit.summary,
                 reason: "revert commit".to_string(),
-                changed_paths: commit.paths.len(),
+                changed_paths: commit.changed_paths,
             });
             continue;
         }
-        if commit.paths.len() > options.max_paths_per_commit {
+        if commit.changed_paths > options.max_paths_per_commit {
             excluded_commits.push(ExcludedCommit {
                 commit: commit.summary,
                 reason: format!(
                     "broad commit changed more than {} paths",
                     options.max_paths_per_commit
                 ),
-                changed_paths: commit.paths.len(),
+                changed_paths: commit.changed_paths,
             });
             continue;
         }
+        debug_assert_eq!(commit.changed_paths, commit.paths.len());
         considered.push(commit);
     }
 
@@ -279,12 +283,12 @@ fn print_limitations(report: &HistoryReport) {
 fn read_anchor_history(
     root: &Path,
     anchor: &Path,
-    max_commits: usize,
+    options: HistoryOptions,
 ) -> Result<Vec<HistoricalCommit>, Box<dyn Error>> {
     // `--full-diff` keeps the pathspec as the commit selector while making
     // `--name-only` report each selected commit's complete change set. This
     // lets one Git process replace the previous log + one-show-per-commit loop.
-    let output = performance::git_command()
+    let mut child = performance::git_command()
         .arg("-C")
         .arg(root)
         .args([
@@ -301,49 +305,151 @@ fn read_anchor_history(
             "--full-diff",
             "-n",
         ])
-        .arg(max_commits.to_string())
+        .arg(options.max_commits.to_string())
         .arg("--")
         .arg(anchor)
-        .output()?;
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git log failed for {}: {stderr}", anchor.display()).into());
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("git log did not provide a stdout pipe")?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or("git log did not provide a stderr pipe")?;
+    let stderr_reader = drain_stderr(stderr);
+
+    let parsed = match stream_history_log(BufReader::new(stdout), options.max_paths_per_commit) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            terminate_git_log(child, stderr_reader);
+            return Err(error.into());
+        }
+    };
+
+    let status = child.wait()?;
+    let stderr_text = stderr_reader.join().unwrap_or_default();
+
+    if !status.success() {
+        return Err(format!("git log failed for {}: {stderr_text}", anchor.display()).into());
     }
 
-    parse_history_log(&String::from_utf8(output.stdout)?)
-        .ok_or_else(|| format!("could not parse git history for {}", anchor.display()).into())
+    parsed.ok_or_else(|| format!("could not parse git history for {}", anchor.display()).into())
 }
 
-fn parse_history_log(output: &str) -> Option<Vec<HistoricalCommit>> {
-    output
-        .split('\u{1e}')
-        .filter(|record| !record.trim().is_empty())
-        .map(parse_history_record)
-        .collect()
+fn drain_stderr<R: Read + Send + 'static>(stderr: R) -> thread::JoinHandle<String> {
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        match BufReader::new(stderr).read_to_end(&mut bytes) {
+            Ok(_) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(_) => String::new(),
+        }
+    })
 }
 
-fn parse_history_record(record: &str) -> Option<HistoricalCommit> {
-    let record = record.trim_start_matches(['\n', '\r']);
-    let mut lines = record.lines();
-    let metadata = lines.next()?.trim();
-    let mut fields = metadata.splitn(3, '\u{1f}');
+fn terminate_git_log(mut child: Child, stderr_reader: thread::JoinHandle<String>) {
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = stderr_reader.join();
+}
+
+fn stream_history_log<R: BufRead>(
+    mut reader: R,
+    max_paths_per_commit: usize,
+) -> std::io::Result<Option<Vec<HistoricalCommit>>> {
+    let mut commits = Vec::new();
+    let mut current: Option<RecordAccumulator> = None;
+    let mut malformed = false;
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        if reader.read_line(&mut line)? == 0 {
+            break;
+        }
+        if malformed {
+            continue;
+        }
+
+        if let Some(metadata) = line.strip_prefix('\u{1e}') {
+            if let Some(record) = current.take() {
+                commits.push(record.finish(max_paths_per_commit));
+            }
+            match history_summary_from_metadata(metadata) {
+                Some(summary) => current = Some(RecordAccumulator::new(summary)),
+                None => malformed = true,
+            }
+        } else if let Some(record) = current.as_mut() {
+            let path = line.trim();
+            if !path.is_empty() {
+                record.offer_path(max_paths_per_commit, path);
+            }
+        } else if !line.trim().is_empty() {
+            malformed = true;
+        }
+    }
+
+    if let Some(record) = current.take() {
+        commits.push(record.finish(max_paths_per_commit));
+    }
+
+    Ok((!malformed).then_some(commits))
+}
+
+struct RecordAccumulator {
+    summary: CommitSummary,
+    paths: BTreeSet<PathBuf>,
+    counting_only: bool,
+    counted_overflow_paths: usize,
+}
+
+impl RecordAccumulator {
+    fn new(summary: CommitSummary) -> Self {
+        Self {
+            summary,
+            paths: BTreeSet::new(),
+            counting_only: false,
+            counted_overflow_paths: 0,
+        }
+    }
+
+    fn offer_path(&mut self, max_paths_per_commit: usize, path: &str) {
+        if self.counting_only {
+            self.counted_overflow_paths += 1;
+            return;
+        }
+        self.paths.insert(PathBuf::from(path));
+        if self.paths.len() > max_paths_per_commit {
+            self.counting_only = true;
+            self.paths.clear();
+            self.counted_overflow_paths = 0;
+        }
+    }
+
+    fn finish(self, max_paths_per_commit: usize) -> HistoricalCommit {
+        let changed_paths = if self.counting_only {
+            max_paths_per_commit + 1 + self.counted_overflow_paths
+        } else {
+            self.paths.len()
+        };
+        HistoricalCommit {
+            summary: self.summary,
+            paths: self.paths.into_iter().collect(),
+            changed_paths,
+        }
+    }
+}
+
+fn history_summary_from_metadata(metadata: &str) -> Option<CommitSummary> {
+    let mut fields = metadata.trim().splitn(3, '\u{1f}');
     let sha = fields.next()?.trim().to_string();
     let date = fields.next()?.trim().to_string();
     let subject = fields.next()?.trim().to_string();
-
-    let paths = lines
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(PathBuf::from)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-
-    Some(HistoricalCommit {
-        summary: CommitSummary { sha, date, subject },
-        paths,
-    })
+    Some(CommitSummary { sha, date, subject })
 }
 
 fn build_companions(anchor: &Path, commits: &[HistoricalCommit]) -> Vec<HistoricalCompanion> {
@@ -450,6 +556,7 @@ fn short_sha(sha: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io::Cursor;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
@@ -462,6 +569,7 @@ mod tests {
                 subject: subject.to_string(),
             },
             paths: paths.iter().map(PathBuf::from).collect(),
+            changed_paths: paths.len(),
         }
     }
 
@@ -486,6 +594,10 @@ mod tests {
         assert!(status.success(), "git command failed: git {args:?}");
     }
 
+    fn parse_log(output: &str, max_paths_per_commit: usize) -> Option<Vec<HistoricalCommit>> {
+        stream_history_log(Cursor::new(output), max_paths_per_commit).unwrap()
+    }
+
     #[test]
     fn parses_batched_git_log_records() {
         let output = concat!(
@@ -495,7 +607,7 @@ mod tests {
             "\x1e123456\x1f2026-08-17T12:00:00Z\x1ffix: another\n\n",
             "src/a.rs\n",
         );
-        let parsed = parse_history_log(output).unwrap();
+        let parsed = parse_log(output, DEFAULT_MAX_PATHS_PER_COMMIT).unwrap();
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].summary.sha, "abcdef");
         assert_eq!(parsed[0].summary.subject, "feat: example");
@@ -503,8 +615,90 @@ mod tests {
             parsed[0].paths,
             vec![PathBuf::from("src/a.rs"), PathBuf::from("tests/a.rs")]
         );
+        assert_eq!(parsed[0].changed_paths, 2);
         assert_eq!(parsed[1].summary.sha, "123456");
         assert_eq!(parsed[1].paths, vec![PathBuf::from("src/a.rs")]);
+        assert_eq!(parsed[1].changed_paths, 1);
+    }
+
+    #[test]
+    fn broad_commit_counts_every_path_without_retaining_them() {
+        let mut output = String::from("\x1ebroad000\x1f2026-08-18T12:00:00Z\x1fmass change\n\n");
+        for index in 0..12 {
+            output.push_str(&format!("src/generated_{index}.rs\n"));
+        }
+        output.push_str("\x1enarrow00\x1f2026-08-17T12:00:00Z\x1fsmall change\n\nsrc/a.rs\n");
+
+        let parsed = parse_log(&output, 4).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert!(parsed[0].paths.is_empty());
+        assert_eq!(parsed[0].changed_paths, 12);
+        assert_eq!(parsed[0].summary.sha, "broad000");
+        assert_eq!(parsed[0].summary.subject, "mass change");
+        assert_eq!(parsed[1].paths, vec![PathBuf::from("src/a.rs")]);
+        assert_eq!(parsed[1].changed_paths, 1);
+    }
+
+    #[test]
+    fn commits_at_the_threshold_stay_fully_retained() {
+        let at_threshold = "\x1ea\x1fd\x1fs\np1\np2\np3\np4\n";
+        let parsed = parse_log(at_threshold, 4).unwrap();
+        assert_eq!(parsed[0].changed_paths, 4);
+        assert_eq!(
+            parsed[0].paths,
+            vec!["p1", "p2", "p3", "p4"]
+                .into_iter()
+                .map(PathBuf::from)
+                .collect::<Vec<_>>()
+        );
+
+        let over_threshold = "\x1eb\x1fd\x1ft\nq1\nq2\nq3\nq4\nq5\n";
+        let parsed = parse_log(over_threshold, 4).unwrap();
+        assert!(parsed[0].paths.is_empty());
+        assert_eq!(parsed[0].changed_paths, 5);
+    }
+
+    #[test]
+    fn duplicate_paths_before_crossing_dedupe_exactly() {
+        let output = "\x1ea\x1fd\x1fs\nb.rs\na.rs\na.rs\nb.rs\nc.rs\n";
+        let parsed = parse_log(output, DEFAULT_MAX_PATHS_PER_COMMIT).unwrap();
+        assert_eq!(
+            parsed[0].paths,
+            vec![
+                PathBuf::from("a.rs"),
+                PathBuf::from("b.rs"),
+                PathBuf::from("c.rs")
+            ]
+        );
+        assert_eq!(parsed[0].changed_paths, 3);
+    }
+
+    #[test]
+    fn blank_lines_and_prelude_whitespace_are_ignored() {
+        let output = "\n\n\x1ea\x1fd\x1fs\n\nsrc/a.rs\n\n\n\x1eb\x1fd\x1ft\n\n\n";
+        let parsed = parse_log(output, DEFAULT_MAX_PATHS_PER_COMMIT).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].paths, vec![PathBuf::from("src/a.rs")]);
+        assert!(parsed[1].paths.is_empty());
+        assert_eq!(parsed[1].changed_paths, 0);
+    }
+
+    #[test]
+    fn malformed_history_records_fail_without_panicking() {
+        assert!(parse_log("garbage before any record\n", 4).is_none());
+        assert!(parse_log("\x1esha-only\x1fdate-only\nsrc/a.rs\n", 4).is_none());
+        assert!(parse_log("\x1esha\x1f", 4).is_none());
+        assert!(parse_log("\x1ea\x1fd\x1fs\np\n\x1eb\x1fd", 4).is_none());
+    }
+
+    #[test]
+    fn complete_final_record_without_trailing_newline_parses() {
+        let parsed = parse_log("\x1ea\x1fd\x1fsubject", 4).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].summary.sha, "a");
+        assert_eq!(parsed[0].summary.subject, "subject");
+        assert!(parsed[0].paths.is_empty());
+        assert_eq!(parsed[0].changed_paths, 0);
     }
 
     #[test]
@@ -525,13 +719,100 @@ mod tests {
         run_git(&root, &["add", "."]);
         run_git(&root, &["commit", "-q", "-m", "paired change"]);
 
-        let commits = read_anchor_history(&root, Path::new("anchor.rs"), 10).unwrap();
+        let commits =
+            read_anchor_history(&root, Path::new("anchor.rs"), HistoryOptions::default()).unwrap();
         let paired = commits
             .iter()
             .find(|commit| commit.summary.subject == "paired change")
             .unwrap();
         assert!(paired.paths.contains(&PathBuf::from("anchor.rs")));
         assert!(paired.paths.contains(&PathBuf::from("companion.rs")));
+        assert_eq!(paired.changed_paths, paired.paths.len());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn broad_commit_reports_exact_count_end_to_end() {
+        let root = unique_temp_dir("broad-history");
+        fs::create_dir_all(&root).unwrap();
+        run_git(&root, &["init", "-q"]);
+        run_git(&root, &["config", "user.email", "cultist@example.invalid"]);
+        run_git(&root, &["config", "user.name", "Cargo Cultist Tests"]);
+
+        fs::write(root.join("anchor.rs"), "fn anchor() {}\n").unwrap();
+        run_git(&root, &["add", "."]);
+        run_git(&root, &["commit", "-q", "-m", "baseline"]);
+
+        for index in 0..5 {
+            fs::write(
+                root.join(format!("companion_{index}.rs")),
+                format!("fn companion_{index}() {{}}\n"),
+            )
+            .unwrap();
+        }
+        fs::write(root.join("anchor.rs"), "fn anchor_broadened() {}\n").unwrap();
+        run_git(&root, &["add", "."]);
+        run_git(
+            &root,
+            &["commit", "-q", "-m", "mass rename across the tree"],
+        );
+
+        let options = HistoryOptions {
+            max_commits: 10,
+            max_paths_per_commit: 2,
+        };
+        let report = analyze_historical_companions(&root, Path::new("anchor.rs"), options).unwrap();
+
+        assert_eq!(report.discovered_commits, 2);
+        assert_eq!(report.considered_commits, 1);
+        assert_eq!(report.broad_commit_threshold, 2);
+        assert_eq!(report.excluded_commits.len(), 1);
+        let excluded = &report.excluded_commits[0];
+        assert_eq!(excluded.commit.subject, "mass rename across the tree");
+        assert_eq!(
+            excluded.reason,
+            "broad commit changed more than 2 paths".to_string()
+        );
+        assert_eq!(excluded.changed_paths, 6);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn batched_history_uses_a_single_git_subprocess() {
+        let root = unique_temp_dir("subprocess-history");
+        fs::create_dir_all(&root).unwrap();
+        run_git(&root, &["init", "-q"]);
+        run_git(&root, &["config", "user.email", "cultist@example.invalid"]);
+        run_git(&root, &["config", "user.name", "Cargo Cultist Tests"]);
+
+        for index in 0..4 {
+            fs::write(root.join("anchor.rs"), format!("fn v{index}() {{}}\n")).unwrap();
+            fs::write(root.join(format!("c_{index}.rs")), "fn c() {}\n").unwrap();
+            run_git(&root, &["add", "."]);
+            run_git(&root, &["commit", "-q", "-m", &format!("change {index}")]);
+        }
+
+        let (_, counters) = performance::capture(|| {
+            analyze_historical_companions(&root, Path::new("anchor.rs"), HistoryOptions::default())
+                .unwrap()
+        });
+        assert_eq!(counters.git_subprocesses, 1);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_git_log_reports_stderr_safely() {
+        let root = unique_temp_dir("failed-history");
+        fs::create_dir_all(&root).unwrap();
+
+        let error = read_anchor_history(&root, Path::new("anchor.rs"), HistoryOptions::default())
+            .expect_err("git log outside a repository must fail");
+        let message = error.to_string();
+        assert!(message.contains("git log failed for"), "{message}");
+        assert!(message.contains("fatal:"), "{message}");
 
         fs::remove_dir_all(root).unwrap();
     }
