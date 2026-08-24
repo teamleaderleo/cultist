@@ -83,6 +83,8 @@ The landed inventory contract can carry exact work identity/head/freshness/path 
 
 Cultist's own PR CI dogfoods a GitHub adapter for this contract. Common disjoint runs use a cheap exact-path prefilter and stay quiet; possible overlaps pay for the fuller deterministic analyzer. Research adapters also explore unpublished branches, but bare-branch activity is not enabled by default because divergence alone does not prove somebody is still working there.
 
+Current main now binds that provider-backed dogfood to an explicit provider snapshot identity instead of treating one fetched inventory as timeless truth. The consumer revalidates the observed frontier when it uses the snapshot, preserves `UNKNOWN` when coordination/provider evidence is unresolved, and refuses to manufacture complete file coverage from paginated or partial observations. Complete bounded file coverage is asserted only when one provider response actually proves the selected union. These are landed correctness rules in the active-change path, not future research notes.
+
 ### Historical companions
 
 `cargo cultist history FILE` explores which paths repeatedly changed with one current file in recent non-merge history.
@@ -260,7 +262,7 @@ Near-term work is increasingly about promoting, weakening, and composing evidenc
 - refine evidence acquisition so replay-rejected or unselected alternatives do not create needless investigation work;
 - continue bounded pre-edit JEI and lifecycle integration;
 - keep review-attention projections over the same evidence;
-- maintain active-change coordination with explicit identity/freshness boundaries;
+- maintain active-change coordination with explicit provider snapshot identity, current-frontier revalidation, and bounded-coverage uncertainty;
 - continue decision-memory authority/applicability research;
 - enrich scoped and temporal precedent with counterexamples;
 - keep explicit repository guidance and instruction freshness separate from inferred precedent;
