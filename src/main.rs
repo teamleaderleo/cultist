@@ -6,6 +6,7 @@ mod ci_test_filters;
 mod diff;
 mod finding;
 mod generated_diff;
+mod git_stream;
 mod history;
 mod performance;
 mod preflight;
@@ -17,6 +18,7 @@ mod test_modules;
 
 use std::env;
 use std::error::Error;
+use std::io::{self, BufWriter, Write as _};
 use std::path::PathBuf;
 use std::process;
 
@@ -29,7 +31,6 @@ use history::{
 };
 use preflight::build_preflight_analysis_report;
 use provider_snapshot_applicability::ProviderSnapshotIdentity;
-use render::render_analysis_report;
 use report::build_test_module_analysis;
 use test_modules::analyze_test_modules;
 
@@ -204,17 +205,20 @@ fn run_preflight(args: Vec<String>) -> Result<(), Box<dyn Error>> {
 }
 
 fn emit_analysis(analysis: &AnalysisReport, format: OutputFormat) -> Result<(), Box<dyn Error>> {
+    let stdout = io::stdout();
+    let mut writer = BufWriter::new(stdout.lock());
     match format {
         OutputFormat::Text => {
-            println!("cargo-cultist {VERSION}");
-            println!("repository: {}\n", analysis.repository);
-            print!("{}", render_analysis_report(analysis));
+            writeln!(writer, "cargo-cultist {VERSION}")?;
+            writeln!(writer, "repository: {}\n", analysis.repository)?;
+            render::write_analysis_report(&mut writer, analysis)?;
         }
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(analysis)?);
+            serde_json::to_writer_pretty(&mut writer, analysis)?;
+            writeln!(writer)?;
         }
     }
-
+    writer.flush()?;
     Ok(())
 }
 
@@ -268,7 +272,11 @@ fn run_history(args: Vec<String>) -> Result<(), Box<dyn Error>> {
             print_history_report(&report);
         }
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&report)?);
+            let stdout = io::stdout();
+            let mut writer = BufWriter::new(stdout.lock());
+            serde_json::to_writer_pretty(&mut writer, &report)?;
+            writeln!(writer)?;
+            writer.flush()?;
         }
     }
 
@@ -612,6 +620,31 @@ are represented as UNKNOWN until authoritative test-listing evidence exists."#
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::finding::{Claim, ClaimKind};
+
+    #[test]
+    fn json_writer_emission_matches_serde_string_bytes() {
+        let analysis = AnalysisReport {
+            schema_version: 1,
+            analysis: "diff-precedent".to_string(),
+            repository: "/r\u{e9}po".to_string(),
+            claims: vec![
+                Claim::new(ClaimKind::Derived, "First claim."),
+                Claim::new(
+                    ClaimKind::Unknown,
+                    "Unicode \u{00fc}n\u{ed}code and \"quotes\" survive identically.",
+                ),
+            ],
+            findings: Vec::new(),
+        };
+
+        let mut streamed = Vec::new();
+        serde_json::to_writer_pretty(&mut streamed, &analysis).unwrap();
+        writeln!(streamed).unwrap();
+
+        let expected = format!("{}\n", serde_json::to_string_pretty(&analysis).unwrap());
+        assert_eq!(streamed, expected.into_bytes());
+    }
 
     #[test]
     fn recognizes_check_and_diff_as_the_same_change_command() {

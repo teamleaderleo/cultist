@@ -1,21 +1,38 @@
-use std::fmt::Write;
+use std::fmt::Write as _;
+use std::io;
 
 use crate::finding::{AnalysisReport, Claim, ClaimKind, Evidence, Finding, Location};
 
+/// Renders the canonical text projection into an owned string.
+///
+/// Equivalent byte-for-byte to [`write_analysis_report`]; kept for callers
+/// that need the rendered report as a value.
+#[allow(dead_code)]
 pub fn render_analysis_report(report: &AnalysisReport) -> String {
-    let mut output = String::new();
-    writeln!(output, "{}", analysis_title(&report.analysis)).unwrap();
+    let mut buffer = Vec::new();
+    write_analysis_report(&mut buffer, report).expect("writing into a Vec cannot fail");
+    String::from_utf8(buffer).expect("the text renderer only writes UTF-8")
+}
+
+/// Streams the canonical text projection straight into `writer` without
+/// building an output-sized intermediate string.
+pub fn write_analysis_report<W: io::Write>(
+    writer: &mut W,
+    report: &AnalysisReport,
+) -> io::Result<()> {
+    writeln!(writer, "{}", analysis_title(&report.analysis))?;
+    let mut started = true;
 
     for claim in &report.claims {
-        write_claim(&mut output, claim, 0);
+        write_claim(writer, claim, 0, &mut started)?;
     }
 
     for (index, finding) in report.findings.iter().enumerate() {
-        writeln!(output, "\nFINDING {}: {}", index + 1, finding.title).unwrap();
-        write_finding(&mut output, finding);
+        writeln!(writer, "\nFINDING {}: {}", index + 1, finding.title)?;
+        write_finding(writer, finding, &mut started)?;
     }
 
-    output
+    Ok(())
 }
 
 /// Experimental agent-oriented projection over the same canonical AnalysisReport.
@@ -74,46 +91,67 @@ pub fn render_terse_analysis_report(report: &AnalysisReport) -> String {
     output
 }
 
-fn write_finding(output: &mut String, finding: &Finding) {
+fn write_finding<W: io::Write>(
+    writer: &mut W,
+    finding: &Finding,
+    started: &mut bool,
+) -> io::Result<()> {
     if let Some(location) = &finding.location {
-        writeln!(output, "  at {}", format_location(location)).unwrap();
+        writeln!(writer, "  at {}", format_location(location))?;
     }
 
     for claim in &finding.claims {
-        write_claim(output, claim, 2);
+        write_claim(writer, claim, 2, started)?;
     }
 
     if let Some(question) = &finding.question {
-        writeln!(output, "\nQUESTION").unwrap();
-        writeln!(output, "  {question}").unwrap();
+        writeln!(writer, "\nQUESTION")?;
+        writeln!(writer, "  {question}")?;
     }
+
+    Ok(())
 }
 
-fn write_claim(output: &mut String, claim: &Claim, indent: usize) {
-    if !output.is_empty() && !output.ends_with("\n\n") {
-        output.push('\n');
+fn write_claim<W: io::Write>(
+    writer: &mut W,
+    claim: &Claim,
+    indent: usize,
+    started: &mut bool,
+) -> io::Result<()> {
+    // Every block ends with exactly one newline, so a separator blank line is
+    // required exactly when something has already been written. This mirrors
+    // the historical "not empty and not ending on a blank line" rule without
+    // inspecting accumulated bytes.
+    if *started {
+        writer.write_all(b"\n")?;
     }
+    *started = true;
 
     let prefix = " ".repeat(indent);
-    writeln!(output, "{prefix}{}", claim_kind_label(claim.kind)).unwrap();
-    writeln!(output, "{prefix}  {}", claim.message).unwrap();
+    writeln!(writer, "{prefix}{}", claim_kind_label(claim.kind))?;
+    writeln!(writer, "{prefix}  {}", claim.message)?;
 
     for evidence in &claim.evidence {
-        write_evidence(output, evidence, indent + 2);
+        write_evidence(writer, evidence, indent + 2)?;
     }
+
+    Ok(())
 }
 
-fn write_evidence(output: &mut String, evidence: &Evidence, indent: usize) {
+fn write_evidence<W: io::Write>(
+    writer: &mut W,
+    evidence: &Evidence,
+    indent: usize,
+) -> io::Result<()> {
     let prefix = " ".repeat(indent);
     match &evidence.location {
         Some(location) => writeln!(
-            output,
+            writer,
             "{prefix}- {} ({})",
             evidence.message,
             format_location(location)
-        )
-        .unwrap(),
-        None => writeln!(output, "{prefix}- {}", evidence.message).unwrap(),
+        ),
+        None => writeln!(writer, "{prefix}- {}", evidence.message),
     }
 }
 
@@ -158,6 +196,58 @@ fn analysis_title(analysis: &str) -> String {
 mod tests {
     use super::*;
     use crate::finding::{Evidence, Finding};
+
+    fn sample_report(claims: Vec<Claim>, findings: Vec<Finding>) -> AnalysisReport {
+        AnalysisReport {
+            schema_version: 1,
+            analysis: "diff-precedent".to_string(),
+            repository: "/r\u{e9}po".to_string(),
+            claims,
+            findings,
+        }
+    }
+
+    #[test]
+    fn streamed_output_is_byte_identical_to_rendered_string() {
+        let fixtures = vec![
+            sample_report(Vec::new(), Vec::new()),
+            sample_report(
+                vec![
+                    Claim::new(ClaimKind::Derived, "First derived claim."),
+                    Claim::new(
+                        ClaimKind::Unknown,
+                        "Multi-line\nmessage with \u{00fc}n\u{ed}code and trailing spaces.  ",
+                    ),
+                ],
+                Vec::new(),
+            ),
+            sample_report(
+                Vec::new(),
+                vec![
+                    Finding::new("kind-a", "Finding without claims")
+                        .at(Location::new("src/a.rs", Some(7))),
+                    Finding::new("kind-b", "Finding with evidence")
+                        .at(Location::new("src/b.rs", None))
+                        .with_claim(
+                            Claim::new(ClaimKind::Observed, "Observed tension.").with_evidence(
+                                Evidence::at(
+                                    "Local precedent.",
+                                    Location::new("src/b.rs", Some(3)),
+                                ),
+                            ),
+                        )
+                        .with_claim(Claim::new(ClaimKind::Inferred, "Inferred scope."))
+                        .with_question("Which precedent governs?"),
+                ],
+            ),
+        ];
+
+        for report in &fixtures {
+            let mut streamed = Vec::new();
+            write_analysis_report(&mut streamed, report).unwrap();
+            assert_eq!(streamed, render_analysis_report(report).into_bytes());
+        }
+    }
 
     #[test]
     fn renders_provenance_and_evidence() {
