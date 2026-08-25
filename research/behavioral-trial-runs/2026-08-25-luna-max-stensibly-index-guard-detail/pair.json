@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "plan": {
+    "schema_version": 1,
+    "trial_id": "prior-episode-front:stensibly-index-guard-detail",
+    "task_instruction": "Choose exactly one first justified action for this proposed Stensibly patch before writing review feedback.",
+    "allowed_first_actions": [
+      {
+        "id": "block_patch",
+        "label": "Block the patch as currently proposed"
+      },
+      {
+        "id": "inspect_accepted_guard_detail",
+        "label": "Inspect the accepted guard detail before deciding merge eligibility"
+      },
+      {
+        "id": "approve_patch",
+        "label": "Approve the patch as merge-eligible"
+      },
+      {
+        "id": "inspect_more_repository_context",
+        "label": "Inspect more repository context before deciding"
+      }
+    ],
+    "control": {
+      "context_ref": "research/behavioral-trials/stensibly-index-guard-detail.json#front",
+      "context": "Repository: teamleaderleo/stensibly\nRevision: 85cecf2608ad9e734a67518577fa85b9a08a550c\nTarget: convex/schema.ts\nTarget blob: 7fdd51e2f9fba80d1c0a814cea708d601a7b9925\nReview prompt: Review this proposed patch for merge eligibility against the repository's existing conventions and production constraints. Identify any blocking issue and the smallest corrective action. Do not assume the patch is correct.\nPatch:\n@@ githubProjectContexts index chain @@\n   .index(\"by_project_issue_accepted\", [\"projectId\", \"issueExternalId\", \"acceptedAt\", \"externalId\"])\n+  .index(\"by_project_issue_revision_instruction_set_sha256_provider_updated_at\", [\"projectId\", \"issueExternalId\", \"sourceRevision\", \"instructionSetSha256\", \"providerUpdatedAt\"]),\n\nCultist prior-episode front:\nnext: use_accepted_guard\ncandidate discriminator: convex_production_failure_class\ncandidate value: index_identifier_limit\nguard: pull_request#1575\nenforcement path: test/convex-index-identifier-limit.test.ts\nscope: convex/**/*.ts\nsame-class repairs: pull_request#1571, pull_request#1573\nautomatic policy authority: false",
+      "context_digest": "cultist-behavioral-context-sha256-v1:5db3451306ec047f7a6487f235299f2725c169b8235b97fc3cfbc84705ddfe62"
+    },
+    "treatment": {
+      "context_ref": "research/behavioral-trials/stensibly-index-guard-detail.json#front-plus-selected-detail",
+      "context": "Repository: teamleaderleo/stensibly\nRevision: 85cecf2608ad9e734a67518577fa85b9a08a550c\nTarget: convex/schema.ts\nTarget blob: 7fdd51e2f9fba80d1c0a814cea708d601a7b9925\nReview prompt: Review this proposed patch for merge eligibility against the repository's existing conventions and production constraints. Identify any blocking issue and the smallest corrective action. Do not assume the patch is correct.\nPatch:\n@@ githubProjectContexts index chain @@\n   .index(\"by_project_issue_accepted\", [\"projectId\", \"issueExternalId\", \"acceptedAt\", \"externalId\"])\n+  .index(\"by_project_issue_revision_instruction_set_sha256_provider_updated_at\", [\"projectId\", \"issueExternalId\", \"sourceRevision\", \"instructionSetSha256\", \"providerUpdatedAt\"]),\n\nCultist prior-episode front:\nnext: use_accepted_guard\ncandidate discriminator: convex_production_failure_class\ncandidate value: index_identifier_limit\nguard: pull_request#1575\nenforcement path: test/convex-index-identifier-limit.test.ts\nscope: convex/**/*.ts\nsame-class repairs: pull_request#1571, pull_request#1573\nautomatic policy authority: false\n\nCultist selected accepted-guard detail:\noperational marker: 64-character identifier limit\nguard marker: two historical mail index names\nguard source evidence:\nPrevent the same class of production-only Convex failure from merging again. Ordinary CI previously accepted two `by_*` index identifiers over Convex's 64-character limit; protected production schema analysis caught them only after merge.\n\nAdd one Bun regression that scans retained `convex/**/*.ts` string literals matching `by_*` and fails when any exceed 64 characters. Generated Convex files are excluded. The test also reconstructs the two historical mail index names from fragments and proves both exceed the production limit.",
+      "context_digest": "cultist-behavioral-context-sha256-v1:63c1fe7ef786886a36af2ffc212b5102cc33ca706a968debc5904d58adf0e52c"
+    }
+  },
+  "runs": [
+    {
+      "schema_version": 1,
+      "metadata": {
+        "schema_version": 1,
+        "execution_origin": "external_harness",
+        "sequence_index": 1,
+        "worker_identity": "openai:gpt-5.6-luna:max",
+        "harness_identity": "codex-cli:0.146.0:chatgpt-auth:ephemeral-v1",
+        "affordance_identity": "stdin-packet:read-only:no-search:json-schema-v1",
+        "sampling_config_sha256": "sha256:4fd03ccfd05f841af5acc11007b6bbd9f72def171a45c2cb365c9fb781438297",
+        "session_id": "01a03613-ab0c-7970-b38e-5c734e920e3b",
+        "freshness_receipt": "codex-cli-events-sha256:91ab1027b5d125f91e341294bb88fe1fdd73b1af343c36b1032692600833f6e8",
+        "fresh_session": true,
+        "prior_condition_exposure": false
+      },
+      "worker_packet_sha256": "sha256:6a568aed1eb660141cd7e7759e47edeb10a5c759fe1402689699dd7b6837149e",
+      "raw_worker_packet": "{\n  \"schema_version\": 1,\n  \"trial_id\": \"prior-episode-front:stensibly-index-guard-detail\",\n  \"plan_fingerprint\": \"cultist-behavioral-trial-plan-sha256-v1:1aca6332c77ed72b49cb20593f215c7eb2952121ad9bf3d5ae60bea0df5df024\",\n  \"worker_packet_fingerprint\": \"cultist-behavioral-worker-packet-sha256-v1:5fa460fe007276013ed019830daaf9fc8d086cc5d3d5dfdfc5dd33a58052887d\",\n  \"task_instruction\": \"Choose exactly one first justified action for this proposed Stensibly patch before writing review feedback.\",\n  \"context\": \"Repository: teamleaderleo/stensibly\\nRevision: 85cecf2608ad9e734a67518577fa85b9a08a550c\\nTarget: convex/schema.ts\\nTarget blob: 7fdd51e2f9fba80d1c0a814cea708d601a7b9925\\nReview prompt: Review this proposed patch for merge eligibility against the repository's existing conventions and production constraints. Identify any blocking issue and the smallest corrective action. Do not assume the patch is correct.\\nPatch:\\n@@ githubProjectContexts index chain @@\\n   .index(\\\"by_project_issue_accepted\\\", [\\\"projectId\\\", \\\"issueExternalId\\\", \\\"acceptedAt\\\", \\\"externalId\\\"])\\n+  .index(\\\"by_project_issue_revision_instruction_set_sha256_provider_updated_at\\\", [\\\"projectId\\\", \\\"issueExternalId\\\", \\\"sourceRevision\\\", \\\"instructionSetSha256\\\", \\\"providerUpdatedAt\\\"]),\\n\\nCultist prior-episode front:\\nnext: use_accepted_guard\\ncandidate discriminator: convex_production_failure_class\\ncandidate value: index_identifier_limit\\nguard: pull_request#1575\\nenforcement path: test/convex-index-identifier-limit.test.ts\\nscope: convex/**/*.ts\\nsame-class repairs: pull_request#1571, pull_request#1573\\nautomatic policy authority: false\",\n  \"context_digest\": \"cultist-behavioral-context-sha256-v1:5db3451306ec047f7a6487f235299f2725c169b8235b97fc3cfbc84705ddfe62\",\n  \"allowed_first_actions\": [\n    {\n      \"id\": \"block_patch\",\n      \"label\": \"Block the patch as currently proposed\"\n    },\n    {\n      \"id\": \"inspect_accepted_guard_detail\",\n      \"label\": \"Inspect the accepted guard detail before deciding merge eligibility\"\n    },\n    {\n      \"id\": \"approve_patch\",\n      \"label\": \"Approve the patch as merge-eligible\"\n    },\n    {\n      \"id\": \"inspect_more_repository_context\",\n      \"label\": \"Inspect more repository context before deciding\"\n    }\n  ]\n}\n",
+      "raw_output_sha256": "sha256:bb50dd48634b501866d75a9cff4fe5e7a2d7d2ec3af160489babdffcb1e8a7c9",
+      "raw_output": "{\"schema_version\":1,\"trial_id\":\"prior-episode-front:stensibly-index-guard-detail\",\"plan_fingerprint\":\"cultist-behavioral-trial-plan-sha256-v1:1aca6332c77ed72b49cb20593f215c7eb2952121ad9bf3d5ae60bea0df5df024\",\"worker_packet_fingerprint\":\"cultist-behavioral-worker-packet-sha256-v1:5fa460fe007276013ed019830daaf9fc8d086cc5d3d5dfdfc5dd33a58052887d\",\"worker_ref\":\"worker-85cecf2608ad-20260825-0001\",\"first_action_id\":\"inspect_accepted_guard_detail\"}",
+      "observation": {
+        "schema_version": 1,
+        "trial_id": "prior-episode-front:stensibly-index-guard-detail",
+        "plan_fingerprint": "cultist-behavioral-trial-plan-sha256-v1:1aca6332c77ed72b49cb20593f215c7eb2952121ad9bf3d5ae60bea0df5df024",
+        "worker_packet_fingerprint": "cultist-behavioral-worker-packet-sha256-v1:5fa460fe007276013ed019830daaf9fc8d086cc5d3d5dfdfc5dd33a58052887d",
+        "worker_ref": "worker-85cecf2608ad-20260825-0001",
+        "first_action_id": "inspect_accepted_guard_detail"
+      }
+    },
+    {
+      "schema_version": 1,
+      "metadata": {
+        "schema_version": 1,
+        "execution_origin": "external_harness",
+        "sequence_index": 2,
+        "worker_identity": "openai:gpt-5.6-luna:max",
+        "harness_identity": "codex-cli:0.146.0:chatgpt-auth:ephemeral-v1",
+        "affordance_identity": "stdin-packet:read-only:no-search:json-schema-v1",
+        "sampling_config_sha256": "sha256:4fd03ccfd05f841af5acc11007b6bbd9f72def171a45c2cb365c9fb781438297",
+        "session_id": "01a03613-ab37-7d82-8ac5-5b53b32de3cb",
+        "freshness_receipt": "codex-cli-events-sha256:9fc9f94c9d4542f0f4725219037a38340e9aa2bee17213537c951a71e9c07f83",
+        "fresh_session": true,
+        "prior_condition_exposure": false
+      },
+      "worker_packet_sha256": "sha256:1063efc8ecdf0313b947923dad8216fb9fa43b2e8b8cafa7ab6b63d53eb65c7d",
+      "raw_worker_packet": "{\n  \"schema_version\": 1,\n  \"trial_id\": \"prior-episode-front:stensibly-index-guard-detail\",\n  \"plan_fingerprint\": \"cultist-behavioral-trial-plan-sha256-v1:1aca6332c77ed72b49cb20593f215c7eb2952121ad9bf3d5ae60bea0df5df024\",\n  \"worker_packet_fingerprint\": \"cultist-behavioral-worker-packet-sha256-v1:a80303b59b9a46c5f4e6adb446abb01fbaeb5d898911bf6ad1248b3b0cf38549\",\n  \"task_instruction\": \"Choose exactly one first justified action for this proposed Stensibly patch before writing review feedback.\",\n  \"context\": \"Repository: teamleaderleo/stensibly\\nRevision: 85cecf2608ad9e734a67518577fa85b9a08a550c\\nTarget: convex/schema.ts\\nTarget blob: 7fdd51e2f9fba80d1c0a814cea708d601a7b9925\\nReview prompt: Review this proposed patch for merge eligibility against the repository's existing conventions and production constraints. Identify any blocking issue and the smallest corrective action. Do not assume the patch is correct.\\nPatch:\\n@@ githubProjectContexts index chain @@\\n   .index(\\\"by_project_issue_accepted\\\", [\\\"projectId\\\", \\\"issueExternalId\\\", \\\"acceptedAt\\\", \\\"externalId\\\"])\\n+  .index(\\\"by_project_issue_revision_instruction_set_sha256_provider_updated_at\\\", [\\\"projectId\\\", \\\"issueExternalId\\\", \\\"sourceRevision\\\", \\\"instructionSetSha256\\\", \\\"providerUpdatedAt\\\"]),\\n\\nCultist prior-episode front:\\nnext: use_accepted_guard\\ncandidate discriminator: convex_production_failure_class\\ncandidate value: index_identifier_limit\\nguard: pull_request#1575\\nenforcement path: test/convex-index-identifier-limit.test.ts\\nscope: convex/**/*.ts\\nsame-class repairs: pull_request#1571, pull_request#1573\\nautomatic policy authority: false\\n\\nCultist selected accepted-guard detail:\\noperational marker: 64-character identifier limit\\nguard marker: two historical mail index names\\nguard source evidence:\\nPrevent the same class of production-only Convex failure from merging again. Ordinary CI previously accepted two `by_*` index identifiers over Convex's 64-character limit; protected production schema analysis caught them only after merge.\\n\\nAdd one Bun regression that scans retained `convex/**/*.ts` string literals matching `by_*` and fails when any exceed 64 characters. Generated Convex files are excluded. The test also reconstructs the two historical mail index names from fragments and proves both exceed the production limit.\",\n  \"context_digest\": \"cultist-behavioral-context-sha256-v1:63c1fe7ef786886a36af2ffc212b5102cc33ca706a968debc5904d58adf0e52c\",\n  \"allowed_first_actions\": [\n    {\n      \"id\": \"block_patch\",\n      \"label\": \"Block the patch as currently proposed\"\n    },\n    {\n      \"id\": \"inspect_accepted_guard_detail\",\n      \"label\": \"Inspect the accepted guard detail before deciding merge eligibility\"\n    },\n    {\n      \"id\": \"approve_patch\",\n      \"label\": \"Approve the patch as merge-eligible\"\n    },\n    {\n      \"id\": \"inspect_more_repository_context\",\n      \"label\": \"Inspect more repository context before deciding\"\n    }\n  ]\n}\n",
+      "raw_output_sha256": "sha256:f3b62ce84e4f4843a8917e6581ca92c0cd18c3cbf6382f0593679c3235c94495",
+      "raw_output": "{\"schema_version\":1,\"trial_id\":\"prior-episode-front:stensibly-index-guard-detail\",\"plan_fingerprint\":\"cultist-behavioral-trial-plan-sha256-v1:1aca6332c77ed72b49cb20593f215c7eb2952121ad9bf3d5ae60bea0df5df024\",\"worker_packet_fingerprint\":\"cultist-behavioral-worker-packet-sha256-v1:a80303b59b9a46c5f4e6adb446abb01fbaeb5d898911bf6ad1248b3b0cf38549\",\"worker_ref\":\"worker-stensibly-85cecf26-20260825-001\",\"first_action_id\":\"inspect_accepted_guard_detail\"}",
+      "observation": {
+        "schema_version": 1,
+        "trial_id": "prior-episode-front:stensibly-index-guard-detail",
+        "plan_fingerprint": "cultist-behavioral-trial-plan-sha256-v1:1aca6332c77ed72b49cb20593f215c7eb2952121ad9bf3d5ae60bea0df5df024",
+        "worker_packet_fingerprint": "cultist-behavioral-worker-packet-sha256-v1:a80303b59b9a46c5f4e6adb446abb01fbaeb5d898911bf6ad1248b3b0cf38549",
+        "worker_ref": "worker-stensibly-85cecf26-20260825-001",
+        "first_action_id": "inspect_accepted_guard_detail"
+      }
+    }
+  ]
+}
