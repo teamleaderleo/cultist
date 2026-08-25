@@ -183,6 +183,7 @@ fn collect_explicit_tests(
 ) -> Result<(), Box<dyn Error>> {
     let scan = scan_rust_repository(root, &BTreeSet::new(), SKIPPED_RUST_DIRS)?;
     performance::record_rust_scan(scan.parsed_files, scan.cache_hits);
+    performance::record_rust_prefiltered(scan.prefiltered_files);
 
     for file in scan.files {
         if let Some(error) = file.facts.parse_error {
@@ -478,6 +479,30 @@ mod tests {
         assert!(report.commands.is_empty());
         assert!(report.tests.is_empty());
         assert!(report.parse_failures.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn supported_workflow_records_prefiltered_rust_work() {
+        let root = unique_temp_dir("ci-tests-prefilter");
+        fs::create_dir_all(root.join(".github/workflows")).unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(
+            root.join(".github/workflows/ci.yml"),
+            "steps:\n  - run: cargo test --lib existing_test\n",
+        )
+        .unwrap();
+        fs::write(root.join("src/lib.rs"), "#[test]\nfn existing_test() {}\n").unwrap();
+        fs::write(root.join("src/value.rs"), "pub const VALUE: usize = 42;\n").unwrap();
+
+        let (report, counters) = performance::capture(|| analyze_ci_test_filters(&root).unwrap());
+
+        assert_eq!(report.commands.len(), 1);
+        assert_eq!(report.tests.len(), 1);
+        assert!(report.parse_failures.is_empty());
+        assert_eq!(counters.rust_files_parsed, 1);
+        assert_eq!(counters.rust_files_prefiltered, 1);
+
         fs::remove_dir_all(root).unwrap();
     }
 }
