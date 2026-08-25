@@ -14,6 +14,7 @@ mod provider_snapshot_applicability;
 mod render;
 mod report;
 mod rust_facts;
+mod test_module_aggregate;
 mod test_modules;
 
 use std::env;

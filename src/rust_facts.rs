@@ -16,8 +16,8 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::performance;
 
-const CACHE_SCHEMA_VERSION: u32 = 1;
-const CACHE_NAMESPACE: &str = "rust-syntax-v1";
+pub(crate) const CACHE_SCHEMA_VERSION: u32 = 1;
+pub(crate) const CACHE_NAMESPACE: &str = "rust-syntax-v1";
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NamedRustFact {
@@ -47,20 +47,38 @@ pub struct RustFactScan {
 }
 
 #[derive(Debug, Clone)]
-struct RustInput {
-    path: PathBuf,
-    content_id: Option<String>,
+pub(crate) struct RustInput {
+    pub(crate) path: PathBuf,
+    pub(crate) content_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
-struct FactCache {
-    root: PathBuf,
+pub(crate) struct FactCache {
+    pub(crate) root: PathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CacheEnvelope {
     schema_version: u32,
     facts: RustFileFacts,
+}
+
+/// Loads content-addressed facts for one clean input, deterministically
+/// extracting and storing them on a cache miss. The boolean result reports
+/// whether the facts came from the cache.
+pub(crate) fn cached_or_extracted_facts(
+    content_id: &str,
+    path: &Path,
+    cache: Option<&FactCache>,
+) -> Result<(RustFileFacts, bool), Box<dyn Error>> {
+    if let Some(facts) = cache.and_then(|cache| cache.load(content_id)) {
+        return Ok((facts, true));
+    }
+    let facts = extract_rust_file(path)?;
+    if let Some(cache) = cache {
+        cache.store(content_id, &facts);
+    }
+    Ok((facts, false))
 }
 
 pub fn scan_rust_repository(
@@ -143,7 +161,7 @@ fn extract_rust_source(source: &str) -> RustFileFacts {
     facts
 }
 
-fn rust_inputs(
+pub(crate) fn rust_inputs(
     root: &Path,
     excluded_paths: &BTreeSet<PathBuf>,
     skipped_dirs: &[&str],
@@ -347,7 +365,7 @@ fn path_has_skipped_dir(path: &Path, skipped_dirs: &[&str]) -> bool {
 }
 
 impl FactCache {
-    fn from_environment() -> Option<Self> {
+    pub(crate) fn from_environment() -> Option<Self> {
         if env::var_os("CARGO_CULTIST_CACHE").is_some_and(|value| value == "0") {
             return None;
         }
@@ -364,7 +382,7 @@ impl FactCache {
         })
     }
 
-    fn load(&self, content_id: &str) -> Option<RustFileFacts> {
+    pub(crate) fn load(&self, content_id: &str) -> Option<RustFileFacts> {
         let path = self.path_for(content_id)?;
         let bytes = fs::read(&path).ok()?;
         let envelope: CacheEnvelope = match serde_json::from_slice(&bytes) {
@@ -377,7 +395,7 @@ impl FactCache {
         (envelope.schema_version == CACHE_SCHEMA_VERSION).then_some(envelope.facts)
     }
 
-    fn store(&self, content_id: &str, facts: &RustFileFacts) {
+    pub(crate) fn store(&self, content_id: &str, facts: &RustFileFacts) {
         let Some(path) = self.path_for(content_id) else {
             return;
         };
@@ -406,24 +424,24 @@ impl FactCache {
 }
 
 #[cfg(target_os = "windows")]
-fn platform_cache_dir() -> Option<PathBuf> {
+pub(crate) fn platform_cache_dir() -> Option<PathBuf> {
     env::var_os("LOCALAPPDATA").map(PathBuf::from)
 }
 
 #[cfg(target_os = "macos")]
-fn platform_cache_dir() -> Option<PathBuf> {
+pub(crate) fn platform_cache_dir() -> Option<PathBuf> {
     env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Caches"))
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
-fn platform_cache_dir() -> Option<PathBuf> {
+pub(crate) fn platform_cache_dir() -> Option<PathBuf> {
     env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
 }
 
 #[cfg(not(any(unix, target_os = "windows")))]
-fn platform_cache_dir() -> Option<PathBuf> {
+pub(crate) fn platform_cache_dir() -> Option<PathBuf> {
     None
 }
 

@@ -21,6 +21,8 @@ pub struct PerfCounters {
     pub git_subprocesses: usize,
     pub rust_files_parsed: usize,
     pub rust_cache_hits: usize,
+    pub baseline_scope_hits: usize,
+    pub baseline_scope_computed: usize,
 }
 
 pub fn init_from_environment() {
@@ -48,6 +50,15 @@ pub fn record_rust_scan(parsed: usize, cache_hits: usize) {
         if let Some(state) = state.borrow_mut().as_mut() {
             state.counters.rust_files_parsed += parsed;
             state.counters.rust_cache_hits += cache_hits;
+        }
+    });
+}
+
+pub fn record_baseline_scopes(hits: usize, computed: usize) {
+    STATE.with(|state| {
+        if let Some(state) = state.borrow_mut().as_mut() {
+            state.counters.baseline_scope_hits += hits;
+            state.counters.baseline_scope_computed += computed;
         }
     });
 }
