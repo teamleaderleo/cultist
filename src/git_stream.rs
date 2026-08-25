@@ -16,6 +16,14 @@ pub(crate) const MAX_LOG_LINE_BYTES: usize = 64 * 1024;
 /// Upper bound for one `--name-only` path line.
 pub(crate) const MAX_PATH_LINE_BYTES: usize = 8 * 1024;
 
+/// Maximum retained diagnostic bytes from one Git child's stderr. The drainer
+/// continues consuming bytes after this cap so a chatty child never receives a
+/// closed pipe merely because diagnostics were bounded.
+pub(crate) const MAX_STDERR_CAPTURE_BYTES: usize = 64 * 1024;
+
+const STDERR_DRAIN_GRACE: Duration = Duration::from_millis(250);
+const STDERR_TRUNCATION_MARKER: &[u8] = b"\n[stderr truncated]\n";
+
 /// Reads one line into `line`, including its `\n` delimiter, mirroring
 /// [`BufRead::read_line`] semantics while refusing to buffer more than
 /// `max_bytes`. Returns the number of bytes read; `Ok(0)` marks end of stream.
@@ -86,12 +94,14 @@ pub(crate) struct StderrDrain {
 }
 
 impl StderrDrain {
-    /// Waits for the drain to finish and returns the captured text (lossily
-    /// decoded). Call only once the child has been waited on normally; orphaned
-    /// grandchildren can hold the pipe open, so the termination path uses
-    /// [`terminate_child`] instead.
+    /// Waits briefly for the drain to finish and returns bounded captured text
+    /// (lossily decoded). A successful direct child can still leave an orphaned
+    /// descendant holding the pipe open, so normal and termination paths share
+    /// the same bounded post-wait grace.
     pub(crate) fn finish(self) -> String {
-        self.receiver.recv().unwrap_or_default()
+        self.receiver
+            .recv_timeout(STDERR_DRAIN_GRACE)
+            .unwrap_or_default()
     }
 }
 
@@ -100,14 +110,37 @@ impl StderrDrain {
 pub(crate) fn drain_stderr<R: Read + Send + 'static>(stderr: R) -> StderrDrain {
     let (sender, receiver) = channel();
     thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let text = match io::BufReader::new(stderr).read_to_end(&mut bytes) {
-            Ok(_) => String::from_utf8_lossy(&bytes).into_owned(),
-            Err(_) => String::new(),
-        };
+        let text = read_stderr_bounded(stderr);
         let _ = sender.send(text);
     });
     StderrDrain { receiver }
+}
+
+fn read_stderr_bounded<R: Read>(stderr: R) -> String {
+    let mut reader = io::BufReader::new(stderr);
+    let mut retained = Vec::new();
+    let mut buffer = [0_u8; 8192];
+    let mut truncated = false;
+
+    loop {
+        let read = match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(_) => return String::new(),
+        };
+        let available = MAX_STDERR_CAPTURE_BYTES.saturating_sub(retained.len());
+        let keep = read.min(available);
+        retained.extend_from_slice(&buffer[..keep]);
+        truncated |= keep < read;
+    }
+
+    if truncated {
+        let payload_cap = MAX_STDERR_CAPTURE_BYTES.saturating_sub(STDERR_TRUNCATION_MARKER.len());
+        retained.truncate(payload_cap);
+        retained.extend_from_slice(STDERR_TRUNCATION_MARKER);
+    }
+    String::from_utf8_lossy(&retained).into_owned()
 }
 
 /// Kills and reaps a child whose streamed output could not be parsed, then
@@ -120,9 +153,7 @@ pub(crate) fn terminate_child(mut child: Child, stderr_drain: StderrDrain) {
     let _ = child.kill();
     let _ = child.wait();
     // A short grace period only; orphans holding the pipe must not stall us.
-    let _ = stderr_drain
-        .receiver
-        .recv_timeout(Duration::from_millis(250));
+    let _ = stderr_drain.receiver.recv_timeout(STDERR_DRAIN_GRACE);
 }
 
 /// Outcome of [`c_style_unquote`].
@@ -280,6 +311,32 @@ mod tests {
                 .kind(),
             ErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn stderr_capture_is_bounded_while_the_reader_drains_to_eof() {
+        let stderr = io::Cursor::new(vec![b'x'; MAX_STDERR_CAPTURE_BYTES * 2]);
+        let captured = drain_stderr(stderr).finish();
+
+        assert_eq!(captured.len(), MAX_STDERR_CAPTURE_BYTES);
+        assert!(captured.starts_with("xxxxxxxx"));
+        assert!(captured.ends_with("\n[stderr truncated]\n"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stderr_finish_is_bounded_when_an_inherited_writer_stays_open() {
+        use std::os::unix::net::UnixStream;
+        use std::time::Instant;
+
+        let (reader, inherited_writer) = UnixStream::pair().unwrap();
+        let drain = drain_stderr(reader);
+        let started = Instant::now();
+
+        assert_eq!(drain.finish(), "");
+        assert!(started.elapsed() < Duration::from_secs(2));
+
+        drop(inherited_writer);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use std::fmt::Write as _;
-use std::io;
+use std::io::{self, Write as _};
 
 use crate::finding::{AnalysisReport, Claim, ClaimKind, Evidence, Finding, Location};
 
@@ -20,19 +20,65 @@ pub fn write_analysis_report<W: io::Write>(
     writer: &mut W,
     report: &AnalysisReport,
 ) -> io::Result<()> {
+    let mut writer = TrackingWriter::new(writer);
     writeln!(writer, "{}", analysis_title(&report.analysis))?;
-    let mut started = true;
 
     for claim in &report.claims {
-        write_claim(writer, claim, 0, &mut started)?;
+        write_claim(&mut writer, claim, 0)?;
     }
 
     for (index, finding) in report.findings.iter().enumerate() {
         writeln!(writer, "\nFINDING {}: {}", index + 1, finding.title)?;
-        write_finding(writer, finding, &mut started)?;
+        write_finding(&mut writer, finding)?;
     }
 
     Ok(())
+}
+
+/// Writer state needed to preserve the historical renderer's separator rule
+/// without retaining the whole report: insert a separator only when emitted
+/// bytes do not already end in a blank line.
+struct TrackingWriter<'a, W> {
+    inner: &'a mut W,
+    bytes_written: usize,
+    trailing_newlines: u8,
+}
+
+impl<'a, W> TrackingWriter<'a, W> {
+    fn new(inner: &'a mut W) -> Self {
+        Self {
+            inner,
+            bytes_written: 0,
+            trailing_newlines: 0,
+        }
+    }
+
+    fn has_output(&self) -> bool {
+        self.bytes_written > 0
+    }
+
+    fn ends_with_blank_line(&self) -> bool {
+        self.trailing_newlines >= 2
+    }
+}
+
+impl<W: io::Write> io::Write for TrackingWriter<'_, W> {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let written = self.inner.write(buffer)?;
+        self.bytes_written = self.bytes_written.saturating_add(written);
+        for byte in &buffer[..written] {
+            self.trailing_newlines = if *byte == b'\n' {
+                self.trailing_newlines.saturating_add(1).min(2)
+            } else {
+                0
+            };
+        }
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 /// Experimental agent-oriented projection over the same canonical AnalysisReport.
@@ -92,16 +138,15 @@ pub fn render_terse_analysis_report(report: &AnalysisReport) -> String {
 }
 
 fn write_finding<W: io::Write>(
-    writer: &mut W,
+    writer: &mut TrackingWriter<'_, W>,
     finding: &Finding,
-    started: &mut bool,
 ) -> io::Result<()> {
     if let Some(location) = &finding.location {
         writeln!(writer, "  at {}", format_location(location))?;
     }
 
     for claim in &finding.claims {
-        write_claim(writer, claim, 2, started)?;
+        write_claim(writer, claim, 2)?;
     }
 
     if let Some(question) = &finding.question {
@@ -113,19 +158,13 @@ fn write_finding<W: io::Write>(
 }
 
 fn write_claim<W: io::Write>(
-    writer: &mut W,
+    writer: &mut TrackingWriter<'_, W>,
     claim: &Claim,
     indent: usize,
-    started: &mut bool,
 ) -> io::Result<()> {
-    // Every block ends with exactly one newline, so a separator blank line is
-    // required exactly when something has already been written. This mirrors
-    // the historical "not empty and not ending on a blank line" rule without
-    // inspecting accumulated bytes.
-    if *started {
+    if writer.has_output() && !writer.ends_with_blank_line() {
         writer.write_all(b"\n")?;
     }
-    *started = true;
 
     let prefix = " ".repeat(indent);
     writeln!(writer, "{prefix}{}", claim_kind_label(claim.kind))?;
@@ -139,7 +178,7 @@ fn write_claim<W: io::Write>(
 }
 
 fn write_evidence<W: io::Write>(
-    writer: &mut W,
+    writer: &mut TrackingWriter<'_, W>,
     evidence: &Evidence,
     indent: usize,
 ) -> io::Result<()> {
@@ -247,6 +286,27 @@ mod tests {
             write_analysis_report(&mut streamed, report).unwrap();
             assert_eq!(streamed, render_analysis_report(report).into_bytes());
         }
+    }
+
+    #[test]
+    fn preserves_historical_separators_after_trailing_newlines() {
+        let report = sample_report(
+            vec![
+                Claim::new(ClaimKind::Proven, "First claim already ends a line.\n"),
+                Claim::new(ClaimKind::Unknown, "Second claim.")
+                    .with_evidence(Evidence::new("Evidence already ends a line.\n")),
+                Claim::new(ClaimKind::Derived, "Third claim."),
+            ],
+            Vec::new(),
+        );
+
+        let mut streamed = Vec::new();
+        write_analysis_report(&mut streamed, &report).unwrap();
+
+        assert_eq!(
+            String::from_utf8(streamed).unwrap(),
+            "DIFF PRECEDENT\n\nPROVEN\n  First claim already ends a line.\n\nUNKNOWN\n  Second claim.\n  - Evidence already ends a line.\n\nDERIVED\n  Third claim.\n"
+        );
     }
 
     #[test]
