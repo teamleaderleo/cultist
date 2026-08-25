@@ -284,7 +284,11 @@ fn validate_episode(episode: &AgentExperienceEpisode) -> Result<(), AgentExperie
             "intervention source_ref",
             MAX_TEXT_BYTES,
         )?;
-        validate_text(&intervention.outcome, "intervention outcome", MAX_TEXT_BYTES)?;
+        validate_text(
+            &intervention.outcome,
+            "intervention outcome",
+            MAX_TEXT_BYTES,
+        )?;
     }
 
     if episode.persistence.len() > MAX_ITEMS {
@@ -295,7 +299,10 @@ fn validate_episode(episode: &AgentExperienceEpisode) -> Result<(), AgentExperie
         validate_atom(&artifact.id, "persistence id", MAX_ID_BYTES)?;
         validate_text(&artifact.reference, "persistence reference", MAX_TEXT_BYTES)?;
         validate_text(&artifact.effect, "persistence effect", MAX_TEXT_BYTES)?;
-        if persistence_by_id.insert(artifact.id.as_str(), artifact).is_some() {
+        if persistence_by_id
+            .insert(artifact.id.as_str(), artifact)
+            .is_some()
+        {
             return Err(AgentExperienceError::new(format!(
                 "duplicate persistence id {}",
                 artifact.id
@@ -493,7 +500,10 @@ fn validate_role_contracts(
             ));
         }
         if !episode.lessons.iter().any(|lesson| {
-            matches!(lesson.status, LessonStatus::Weakened | LessonStatus::Rejected)
+            matches!(
+                lesson.status,
+                LessonStatus::Weakened | LessonStatus::Rejected
+            )
         }) {
             return Err(AgentExperienceError::new(
                 "routing heuristic counterexample requires a weakened or rejected lesson",
