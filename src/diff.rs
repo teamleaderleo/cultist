@@ -2,13 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
-
-#[cfg(test)]
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::finding::{AnalysisReport, Claim, ClaimKind, Evidence, Finding, Location};
 use crate::generated_diff::add_generated_companion_findings;
+use crate::git_stream::{
+    self, MAX_DIFF_LINE_BYTES, UnquotedPath, drain_stderr, read_text_line_bounded, terminate_child,
+};
 use crate::performance;
 use crate::test_modules::{
     TestModuleOccurrence, TestModuleReport, analyze_test_module_files,
@@ -27,13 +27,20 @@ struct ChangedLines {
 }
 
 impl ChangedLines {
+    /// Records one added new-file line number. Git streams hunks in ascending
+    /// new-file order per path, so lines arrive monotonically; adjacent and
+    /// contiguous numbers merge into a single inclusive range, keeping storage
+    /// proportional to hunks rather than added lines.
     fn insert(&mut self, path: &Path, line: usize) {
         let ranges = self.by_path.entry(path.to_path_buf()).or_default();
-        if let Some(last) = ranges.last_mut()
-            && line <= last.end.saturating_add(1)
-        {
-            last.end = last.end.max(line);
-            return;
+        if let Some(last) = ranges.last_mut() {
+            // Descending lines would create overlapping ranges and break the
+            // logarithmic interval search; saturated repeats are allowed.
+            debug_assert!(last.end <= line, "added line numbers must ascend per path");
+            if line <= last.end.saturating_add(1) {
+                last.end = last.end.max(line);
+                return;
+            }
         }
         ranges.push(LineRange {
             start: line,
@@ -41,11 +48,12 @@ impl ChangedLines {
         });
     }
 
+    /// Membership is an interval search over sorted, disjoint ranges:
+    /// logarithmic in hunk count instead of linear over individual lines.
     fn contains(&self, path: &Path, line: usize) -> bool {
         self.by_path.get(path).is_some_and(|ranges| {
-            ranges
-                .iter()
-                .any(|range| range.start <= line && line <= range.end)
+            let index = ranges.partition_point(|range| range.end < line);
+            ranges.get(index).is_some_and(|range| range.start <= line)
         })
     }
 
@@ -63,6 +71,11 @@ impl ChangedLines {
     #[cfg(test)]
     fn range_count(&self, path: &Path) -> usize {
         self.by_path.get(path).map_or(0, Vec::len)
+    }
+
+    #[cfg(test)]
+    fn total_range_entries(&self) -> usize {
+        self.by_path.values().map(Vec::len).sum()
     }
 }
 
@@ -286,7 +299,8 @@ fn git_diff_changed_lines(root: &Path, base: Option<&str>) -> Result<ChangedLine
         None => "HEAD".to_string(),
     };
 
-    let mut child = performance::git_command()
+    let mut command = performance::git_command();
+    command
         .arg("-C")
         .arg(root)
         .args([
@@ -300,19 +314,39 @@ fn git_diff_changed_lines(root: &Path, base: Option<&str>) -> Result<ChangedLine
         ])
         .arg(anchor)
         .arg("--")
-        .arg("*.rs")
+        .arg("*.rs");
+    run_git_diff_streaming(command)
+}
+
+fn run_git_diff_streaming(mut command: Command) -> Result<ChangedLines, Box<dyn Error>> {
+    command
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .stderr(Stdio::piped());
+    let mut child = command.spawn()?;
 
     let stdout = child
         .stdout
         .take()
         .ok_or("git diff did not provide a stdout pipe")?;
-    let changed = parse_changed_lines(BufReader::new(stdout))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or("git diff did not provide a stderr pipe")?;
+    let stderr_reader = drain_stderr(stderr);
+
+    let changed = match parse_changed_lines(BufReader::new(stdout)) {
+        Ok(changed) => changed,
+        Err(error) => {
+            terminate_child(child, stderr_reader);
+            return Err(format!("failed to stream git diff output: {error}").into());
+        }
+    };
     let status = child.wait()?;
+    let stderr_text = stderr_reader.finish();
 
     if !status.success() {
-        return Err(format!("git diff failed with status {status}").into());
+        return Err(format!("git diff failed with status {status}: {stderr_text}").into());
     }
 
     Ok(changed)
@@ -333,57 +367,143 @@ fn merge_base(root: &Path, base: &str) -> Result<String, Box<dyn Error>> {
     Ok(String::from_utf8(output.stdout)?.trim().to_string())
 }
 
-fn parse_changed_lines<R: BufRead>(mut reader: R) -> io::Result<ChangedLines> {
+/// Parses a `--unified=0` unified diff stream into per-path added-line ranges.
+///
+/// The stream is consumed line by line with a bounded line buffer, so raw
+/// patch bytes become facts and are released incrementally. Hunk headers carry
+/// the new-side line count; the parser consumes exactly that many body lines,
+/// which keeps structural headers (`diff --git`, `+++`, binary markers) from
+/// being mistaken for hunk content and lets malformed bodies fail closed
+/// instead of silently mis-attributing lines.
+fn parse_changed_lines<R: BufRead>(reader: R) -> io::Result<ChangedLines> {
+    parse_changed_lines_bounded(reader, MAX_DIFF_LINE_BYTES)
+}
+
+fn parse_changed_lines_bounded<R: BufRead>(
+    mut reader: R,
+    max_line_bytes: usize,
+) -> io::Result<ChangedLines> {
     let mut changed = ChangedLines::default();
     let mut current_path: Option<PathBuf> = None;
+    // Some(next new-file line number) while a hunk body is active.
     let mut current_new_line: Option<usize> = None;
-    let mut buffer = String::new();
+    // Remaining body lines in the active hunk's new side (0 = none).
+    let mut remaining_new_lines: usize = 0;
+    let mut text = String::new();
+    let mut scratch = Vec::new();
 
-    while reader.read_line(&mut buffer)? != 0 {
-        let line = buffer.trim_end_matches(['\n', '\r']);
-
-        if let Some(path) = line.strip_prefix("+++ ") {
-            current_path = (path != "/dev/null").then(|| PathBuf::from(path));
-            current_new_line = None;
-            buffer.clear();
-            continue;
+    loop {
+        text.clear();
+        if read_text_line_bounded(&mut reader, &mut text, &mut scratch, max_line_bytes)? == 0 {
+            break;
         }
+        let line = text.trim_end_matches(['\n', '\r']);
 
         if line.starts_with("@@") {
-            current_new_line = hunk_new_start(line);
-            buffer.clear();
+            let (start, count) = parse_hunk_header(line)?;
+            current_new_line = Some(start);
+            remaining_new_lines = count;
             continue;
         }
 
-        let Some(new_line) = current_new_line else {
-            buffer.clear();
-            continue;
-        };
-
-        if line.starts_with('+') && !line.starts_with("+++") {
-            if let Some(path) = &current_path {
-                changed.insert(path, new_line);
+        if remaining_new_lines == 0 {
+            current_new_line = None;
+        } else if let Some(new_line) = current_new_line {
+            match consume_hunk_body_line(&mut changed, current_path.as_deref(), line, new_line)? {
+                HunkBodyOutcome::Advanced => {
+                    current_new_line = Some(new_line.saturating_add(1));
+                    remaining_new_lines -= 1;
+                }
+                HunkBodyOutcome::Retained => {}
             }
-            current_new_line = Some(new_line + 1);
-        } else if line.starts_with('-') && !line.starts_with("---") {
-            // Deleted lines do not advance the line number in the new file.
-        } else if !line.starts_with('\\') {
-            current_new_line = Some(new_line + 1);
+            continue;
         }
 
-        buffer.clear();
+        // Outside any active hunk: only file headers are structural here.
+        if let Some(target) = line.strip_prefix("+++ ") {
+            current_path = parse_diff_target(target)?;
+        }
     }
 
     Ok(changed)
 }
 
-fn hunk_new_start(header: &str) -> Option<usize> {
+enum HunkBodyOutcome {
+    /// The line belongs to the hunk's new side and advanced the cursor.
+    Advanced,
+    /// The line is old-side or metadata and left the cursor unchanged.
+    Retained,
+}
+
+fn consume_hunk_body_line(
+    changed: &mut ChangedLines,
+    path: Option<&Path>,
+    line: &str,
+    new_line: usize,
+) -> io::Result<HunkBodyOutcome> {
+    // An empty body line is an empty context line whose leading space some
+    // producers trim away; it still occupies one new-side slot.
+    let first = line.as_bytes().first().copied();
+    match first {
+        None | Some(b' ') => Ok(HunkBodyOutcome::Advanced),
+        Some(b'\\') => Ok(HunkBodyOutcome::Retained),
+        Some(b'-') => Ok(HunkBodyOutcome::Retained),
+        Some(b'+') => {
+            if let Some(path) = path {
+                changed.insert(path, new_line);
+            }
+            Ok(HunkBodyOutcome::Advanced)
+        }
+        Some(_) => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("malformed hunk body line: {line:.80}"),
+        )),
+    }
+}
+
+/// Parses the new-side start and count out of a `@@ -a,b +c,d @@ context`
+/// header. A missing count means one line. Malformed numbers fail closed:
+/// silently skipping a header would mis-attribute every following line.
+fn parse_hunk_header(header: &str) -> io::Result<(usize, usize)> {
+    let malformed = || {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("malformed hunk header: {header:.120}"),
+        )
+    };
+
     let range = header
         .split_whitespace()
-        .find(|part| part.starts_with('+'))?
-        .trim_start_matches('+');
-    let start = range.split_once(',').map_or(range, |(start, _)| start);
-    start.parse().ok()
+        .find(|part| part.starts_with('+'))
+        .ok_or_else(malformed)?;
+    let spec = range.trim_start_matches('+');
+    let (start, count) = spec.split_once(',').unwrap_or((spec, ""));
+    let start = start.parse::<usize>().map_err(|_| malformed())?;
+    let count = if count.is_empty() {
+        1
+    } else {
+        count.parse::<usize>().map_err(|_| malformed())?
+    };
+    Ok((start, count))
+}
+
+/// Resolves a `+++ ` target token into a tracked path. `/dev/null` marks a
+/// created-from-nothing or deleted file. Git C-quotes targets containing
+/// quotes, backslashes, or control characters; those decode back to exact
+/// bytes. A trailing tab is Git's marker for paths with trailing whitespace
+/// and is not part of the path.
+fn parse_diff_target(token: &str) -> io::Result<Option<PathBuf>> {
+    if token == "/dev/null" {
+        return Ok(None);
+    }
+    let token = token.strip_suffix('\t').unwrap_or(token);
+    match git_stream::c_style_unquote(token) {
+        Ok(UnquotedPath::Verbatim) => Ok(Some(PathBuf::from(token))),
+        Ok(UnquotedPath::Decoded(bytes)) => String::from_utf8(bytes)
+            .map(|path| Some(PathBuf::from(path)))
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "quoted path is not UTF-8")),
+        Err(reason) => Err(io::Error::new(io::ErrorKind::InvalidData, reason)),
+    }
 }
 
 fn changed_test_modules<'a>(
@@ -684,5 +804,282 @@ mod tests {
                     .contains("No added or renamed test-gated module declarations")
         }));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    struct TrickleReader<R> {
+        inner: R,
+    }
+
+    impl<R: io::Read> io::Read for TrickleReader<R> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if buf.is_empty() {
+                return Ok(0);
+            }
+            self.inner.read(&mut buf[..1])
+        }
+    }
+
+    fn parse_bytes(bytes: &[u8]) -> ChangedLines {
+        parse_changed_lines(io::Cursor::new(bytes)).unwrap()
+    }
+
+    #[test]
+    fn fragmented_reads_parse_identically_to_whole_buffers() {
+        let patch = b"diff --git src/a.rs src/a.rs\n\
+                      --- src/a.rs\n\
+                      +++ src/a.rs\r\n\
+                      @@ -10,0 +11,2 @@\r\n\
+                      +one\n\
+                      +two\n\
+                      @@ -30 +32 @@\n\
+                      -old\n\
+                      \\ No newline at end of file\n\
+                      +new";
+        let whole = parse_bytes(patch);
+        let fragmented = parse_changed_lines(BufReader::new(TrickleReader {
+            inner: io::Cursor::new(patch),
+        }))
+        .unwrap();
+        assert_eq!(whole, fragmented);
+        assert!(whole.contains(Path::new("src/a.rs"), 11));
+        assert!(whole.contains(Path::new("src/a.rs"), 12));
+        assert!(whole.contains(Path::new("src/a.rs"), 32));
+        assert!(!whole.contains(Path::new("src/a.rs"), 13));
+    }
+
+    #[test]
+    fn binary_file_markers_between_files_do_not_corrupt_ranges() {
+        let patch = concat!(
+            "diff --git src/a.rs src/a.rs\n",
+            "--- src/a.rs\n",
+            "+++ src/a.rs\n",
+            "@@ -1,0 +2,1 @@\n",
+            "+added\n",
+            "diff --git data.bin data.bin\n",
+            "index 111..222 100644\n",
+            "Binary files data.bin and data.bin differ\n",
+            "diff --git src/b.rs src/b.rs\n",
+            "--- src/b.rs\n",
+            "+++ src/b.rs\n",
+            "@@ -5,0 +6,2 @@\n",
+            "+first\n",
+            "+second\n",
+        );
+        let changed = parse_bytes(patch.as_bytes());
+        assert!(changed.contains(Path::new("src/a.rs"), 2));
+        assert!(changed.contains(Path::new("src/b.rs"), 7));
+        assert_eq!(changed.range_count(Path::new("src/a.rs")), 1);
+        assert_eq!(changed.range_count(Path::new("src/b.rs")), 1);
+        assert!(!changed.by_path.contains_key(Path::new("data.bin")));
+    }
+
+    #[test]
+    fn counted_hunks_stop_consuming_at_the_header_count() {
+        // An added line whose content itself starts with `++ ` renders as a
+        // line beginning with `+++`; the counted state machine must treat it
+        // as hunk content, not as the next file header.
+        let patch = concat!(
+            "diff --git src/a.rs src/a.rs\n",
+            "--- src/a.rs\n",
+            "+++ src/a.rs\n",
+            "@@ -1,0 +2,3 @@\n",
+            "+first\n",
+            "+++ looks like a header\n",
+            "+third\n",
+        );
+        let changed = parse_bytes(patch.as_bytes());
+        assert_eq!(changed.range_count(Path::new("src/a.rs")), 1);
+        assert!(changed.contains(Path::new("src/a.rs"), 3));
+        assert!(changed.contains(Path::new("src/a.rs"), 4));
+        assert!(!changed.contains(Path::new("looks like a header"), 1));
+    }
+
+    #[test]
+    fn quoted_target_paths_decode_c_escapes() {
+        let patch = concat!(
+            "diff --git src/we\tird.rs src/we\tird.rs\n",
+            "--- src/we\tird.rs\n",
+            "+@@ header-shaped content\n",
+            "+++ \"src/we\\tird.rs\"\n",
+            "@@ -0,0 +1,1 @@\n",
+            "+inside\n",
+        );
+        let changed = parse_bytes(patch.as_bytes());
+        assert!(changed.contains(Path::new("src/we\tird.rs"), 1));
+    }
+
+    #[test]
+    fn malformed_hunk_headers_fail_closed_instead_of_skipping() {
+        for bad in [
+            &b"+++ src/a.rs\n@@ garbage @@\n+x\n"[..],
+            b"+++ src/a.rs\n@@ -1,0 +99999999999999999999,2 @@\n+x\n",
+            b"+++ src/a.rs\n@@ -1,0 +18446744073709551616 @@\n+x\n",
+        ] {
+            let error = parse_changed_lines(io::Cursor::new(bad)).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData, "{error}");
+        }
+    }
+
+    #[test]
+    fn malformed_hunk_body_lines_fail_closed() {
+        let patch = b"+++ src/a.rs\n@@ -1,0 +1,2 @@\n+ok\nunexpected body\n";
+        let error = parse_changed_lines(io::Cursor::new(patch)).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn oversized_lines_fail_closed_with_a_bounded_buffer() {
+        let long_line = vec![b'a'; 128];
+        let mut patch = b"+++ src/a.rs\n@@ -1,0 +1,2 @@\n".to_vec();
+        patch.extend_from_slice(&long_line);
+
+        let error = parse_changed_lines_bounded(io::Cursor::new(&patch), 32).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn saturating_hunk_starts_never_overflow() {
+        let max = usize::MAX;
+        let patch = format!("+++ src/a.rs\n@@ -1,0 +{max},2 @@\n+a\n+b\n");
+        let changed = parse_bytes(patch.as_bytes());
+        assert!(changed.contains(Path::new("src/a.rs"), max));
+        assert!(changed.range_count(Path::new("src/a.rs")) <= 2);
+    }
+
+    #[test]
+    fn million_line_contiguous_addition_is_one_range_entry() {
+        let started = std::time::Instant::now();
+        const LINES: usize = 1_000_000;
+        let mut patch = String::with_capacity(LINES * 8 + 64);
+        patch.push_str("+++ src/generated.rs\n@@ -0,0 +1,");
+        patch.push_str(&LINES.to_string());
+        patch.push_str(" @@\n");
+        for _ in 0..LINES {
+            patch.push_str("+generated line\n");
+        }
+
+        let changed = parse_bytes(patch.as_bytes());
+        let elapsed = started.elapsed();
+
+        // Structural memory proxy: one merged range entry proves storage is
+        // O(hunks), independent of the million added lines.
+        assert_eq!(changed.total_range_entries(), 1);
+        assert_eq!(changed.range_count(Path::new("src/generated.rs")), 1);
+        assert!(changed.contains(Path::new("src/generated.rs"), 1));
+        assert!(changed.contains(Path::new("src/generated.rs"), LINES));
+        assert!(!changed.contains(Path::new("src/generated.rs"), LINES + 1));
+
+        println!(
+            "million-line contiguous addition: {} range entries in {elapsed:?}",
+            changed.total_range_entries()
+        );
+        assert!(
+            elapsed.as_secs() < 60,
+            "million-line parse should stay far below wall-clock CI limits"
+        );
+    }
+
+    #[test]
+    fn sparse_additions_keep_disjoint_ranges_and_boundary_membership() {
+        const HUNKS: usize = 50_000;
+        let mut patch = String::from("+++ src/sparse.rs\n");
+        for hunk in 0..HUNKS {
+            let start = hunk * 4 + 1;
+            patch.push_str(&format!("@@ -{start},0 +{start},1 @@\n+sparse\n"));
+        }
+        let changed = parse_bytes(patch.as_bytes());
+
+        assert_eq!(changed.range_count(Path::new("src/sparse.rs")), HUNKS);
+        assert_eq!(changed.total_range_entries(), HUNKS);
+        for probe in [0_usize, 1, 2_000, 199_999, 200_000] {
+            let expected = probe > 0 && (probe - 1) % 4 == 0 && probe <= HUNKS * 4;
+            assert_eq!(
+                changed.contains(Path::new("src/sparse.rs"), probe),
+                expected,
+                "probe {probe}"
+            );
+        }
+    }
+
+    #[test]
+    fn overlapping_and_adjacent_ranges_merge_into_canonical_form() {
+        let mut changed = ChangedLines::default();
+        for line in [10_usize, 11, 12, 14, 15] {
+            changed.insert(Path::new("src/a.rs"), line);
+        }
+        assert_eq!(changed.range_count(Path::new("src/a.rs")), 2);
+        assert!(changed.contains(Path::new("src/a.rs"), 12));
+        assert!(!changed.contains(Path::new("src/a.rs"), 13));
+        assert!(changed.contains(Path::new("src/a.rs"), 15));
+
+        let later_file = ChangedLines {
+            by_path: BTreeMap::from([(
+                PathBuf::from("src/b.rs"),
+                vec![
+                    LineRange { start: 5, end: 6 },
+                    LineRange { start: 9, end: 9 },
+                    LineRange {
+                        start: 100,
+                        end: 100,
+                    },
+                    LineRange {
+                        start: 4096,
+                        end: 8192,
+                    },
+                ],
+            )]),
+        };
+        for line in [5_usize, 6, 8, 9, 100, 4095, 5000, 8192, 8193] {
+            assert_eq!(
+                later_file.contains(Path::new("src/b.rs"), line),
+                [5, 6, 9, 100, 5000, 8192].contains(&line),
+                "probe {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn parser_errors_kill_and_reap_the_child_promptly() {
+        let started = std::time::Instant::now();
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg("printf '+++ src/a.rs\n@@ broken header @@\n'; sleep 30");
+        let error = run_git_diff_streaming(command).expect_err("malformed stream must fail");
+
+        assert!(
+            error.to_string().contains("malformed hunk header"),
+            "{error}"
+        );
+        assert!(
+            started.elapsed().as_secs() < 20,
+            "a stuck child must be killed instead of waited on: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn stderr_pressure_cannot_deadlock_stdout_parsing() {
+        let mut command = Command::new("/bin/sh");
+        command.arg("-c").arg(
+            "yes x | head -c 2097152 >&2; \
+             printf '+++ src/a.rs\n@@ -0,0 +1,1 @@\n+line\n'",
+        );
+        let changed = run_git_diff_streaming(command).unwrap();
+        assert!(changed.contains(Path::new("src/a.rs"), 1));
+    }
+
+    #[test]
+    fn nonzero_child_exit_reports_stderr_text() {
+        let outside = unique_temp_dir("outside-repo");
+        fs::create_dir_all(&outside).unwrap();
+        let mut command = Command::new("git");
+        command.arg("-C").arg(&outside).arg("log").arg("-1");
+        let error = run_git_diff_streaming(command).expect_err("outside a repo git must fail");
+
+        let message = error.to_string();
+        assert!(message.contains("failed with status"), "{message}");
+        assert!(message.contains("fatal:"), "{message}");
+        fs::remove_dir_all(outside).unwrap();
     }
 }

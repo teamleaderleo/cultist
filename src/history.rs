@@ -5,11 +5,11 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::process::Command;
-use std::process::{Child, Stdio};
-use std::thread;
+use std::process::Stdio;
 
 use serde::Serialize;
 
+use crate::git_stream::{self, MAX_LOG_LINE_BYTES, drain_stderr, terminate_child};
 use crate::performance;
 
 pub const HISTORY_REPORT_SCHEMA_VERSION: u32 = 1;
@@ -326,35 +326,19 @@ fn read_anchor_history(
     let parsed = match stream_history_log(BufReader::new(stdout), options.max_paths_per_commit) {
         Ok(parsed) => parsed,
         Err(error) => {
-            terminate_git_log(child, stderr_reader);
+            terminate_child(child, stderr_reader);
             return Err(error.into());
         }
     };
 
     let status = child.wait()?;
-    let stderr_text = stderr_reader.join().unwrap_or_default();
+    let stderr_text = stderr_reader.finish();
 
     if !status.success() {
         return Err(format!("git log failed for {}: {stderr_text}", anchor.display()).into());
     }
 
     parsed.ok_or_else(|| format!("could not parse git history for {}", anchor.display()).into())
-}
-
-fn drain_stderr<R: Read + Send + 'static>(stderr: R) -> thread::JoinHandle<String> {
-    thread::spawn(move || {
-        let mut bytes = Vec::new();
-        match BufReader::new(stderr).read_to_end(&mut bytes) {
-            Ok(_) => String::from_utf8_lossy(&bytes).into_owned(),
-            Err(_) => String::new(),
-        }
-    })
-}
-
-fn terminate_git_log(mut child: Child, stderr_reader: thread::JoinHandle<String>) {
-    let _ = child.kill();
-    let _ = child.wait();
-    let _ = stderr_reader.join();
 }
 
 fn stream_history_log<R: BufRead>(
@@ -365,10 +349,16 @@ fn stream_history_log<R: BufRead>(
     let mut current: Option<RecordAccumulator> = None;
     let mut malformed = false;
     let mut line = String::new();
+    let mut scratch = Vec::new();
 
     loop {
-        line.clear();
-        if reader.read_line(&mut line)? == 0 {
+        if git_stream::read_text_line_bounded(
+            &mut reader,
+            &mut line,
+            &mut scratch,
+            MAX_LOG_LINE_BYTES,
+        )? == 0
+        {
             break;
         }
         if malformed {
@@ -777,6 +767,99 @@ mod tests {
         assert_eq!(excluded.changed_paths, 6);
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mass_commit_crossing_threshold_retains_no_path_strings_and_counts_exactly() {
+        const MASS_PATHS: usize = 250;
+        let root = unique_temp_dir("mass-commit");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(root.join("mass")).unwrap();
+        run_git(&root, &["init", "-q"]);
+        run_git(&root, &["config", "user.email", "cultist@example.invalid"]);
+        run_git(&root, &["config", "user.name", "Cargo Cultist Tests"]);
+        // This fixture creates enough loose objects to trigger detached Git
+        // auto-maintenance on some CI runners. Keep cleanup deterministic: the
+        // fixture tests Cultist's streaming/accounting, not Git's GC policy.
+        run_git(&root, &["config", "gc.auto", "0"]);
+
+        fs::write(root.join("anchor.rs"), "fn anchor() {}\n").unwrap();
+        run_git(&root, &["add", "."]);
+        run_git(&root, &["commit", "-q", "-m", "baseline"]);
+
+        for index in 0..MASS_PATHS {
+            fs::write(
+                root.join(format!("mass/companion_{index:03}.rs")),
+                format!("fn companion_{index}() {{}}\n"),
+            )
+            .unwrap();
+        }
+        fs::write(root.join("anchor.rs"), "fn anchor_mass() {}\n").unwrap();
+        run_git(&root, &["add", "."]);
+        run_git(&root, &["commit", "-q", "-m", "tree-wide mass change"]);
+
+        let report = analyze_historical_companions(
+            &root,
+            Path::new("anchor.rs"),
+            HistoryOptions {
+                max_commits: 10,
+                ..HistoryOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(report.discovered_commits, 2);
+        assert_eq!(report.considered_commits, 1);
+        assert_eq!(report.excluded_commits.len(), 1);
+        let excluded = &report.excluded_commits[0];
+        // Exact accounting survives the threshold crossing: anchor + companions.
+        assert_eq!(excluded.changed_paths, MASS_PATHS + 1);
+
+        // Structural memory proxy: the retained set for the broad commit is
+        // empty even though the exact path count is reported. Reading the raw
+        // stream again with the same accumulator keeps every retained string
+        // bounded by the threshold.
+        let streamed = stream_history_log(
+            Cursor::new(read_log_output(&root, Path::new("anchor.rs"))),
+            DEFAULT_MAX_PATHS_PER_COMMIT,
+        )
+        .unwrap()
+        .unwrap();
+        let broad = streamed
+            .iter()
+            .find(|commit| commit.summary.subject == "tree-wide mass change")
+            .unwrap();
+        assert!(broad.paths.is_empty());
+        assert_eq!(broad.changed_paths, MASS_PATHS + 1);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn read_log_output(root: &Path, anchor: &Path) -> Vec<u8> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args([
+                "-c",
+                "core.quotepath=false",
+                "log",
+                "--format=%x1e%H%x1f%cI%x1f%s",
+                "--name-only",
+                "--no-renames",
+                "--no-color",
+                "--no-ext-diff",
+                "--root",
+                "--no-merges",
+                "--full-diff",
+                "-n",
+                "10",
+                "--",
+            ])
+            .arg(anchor)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        output.stdout
     }
 
     #[test]

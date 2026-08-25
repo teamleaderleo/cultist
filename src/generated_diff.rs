@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::process::Command;
@@ -14,6 +14,10 @@ use proc_macro2::{Delimiter, Group, TokenStream, TokenTree};
 mod generator_ownership;
 
 use crate::finding::{AnalysisReport, Claim, ClaimKind, Evidence, Finding, Location};
+use crate::git_stream::{
+    self, MAX_LOG_LINE_BYTES, MAX_PATH_LINE_BYTES, UnquotedPath, drain_stderr,
+    read_text_line_bounded, terminate_child,
+};
 use crate::performance;
 use generator_ownership::{
     GeneratorRelation, discover_generator_relations, generated_attribute_paths,
@@ -60,6 +64,7 @@ struct SourceHistoryRecord {
     parent: Option<String>,
     subject: String,
     paths: BTreeSet<PathBuf>,
+    changed_paths: usize,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -75,8 +80,23 @@ pub fn add_generated_companion_findings(
     base: Option<&str>,
     analysis: &mut AnalysisReport,
 ) -> Result<(), Box<dyn Error>> {
+    let relations = discover_generator_relations(root)?;
+    if relations.is_empty() {
+        return Ok(());
+    }
+    let generated_attrs = generated_attribute_paths(root);
+
+    // The analyzer only ever asks two questions of the changed set: which
+    // changed paths are Rust files, and whether each admitted relation's exact
+    // generated output changed. Restricting the Git pathspec to those classes
+    // (`*.rs` plus literal output paths) keeps the query exact while letting
+    // Git skip every other file class in large trees.
+    let watched_outputs: BTreeSet<String> = relations
+        .iter()
+        .map(|relation| relation.output.clone())
+        .collect();
     let anchor = diff_anchor(root, base)?;
-    let changed = changed_paths(root, &anchor)?;
+    let changed = changed_paths(root, &anchor, &watched_outputs)?;
     if changed.is_empty() {
         return Ok(());
     }
@@ -90,11 +110,6 @@ pub fn add_generated_companion_findings(
         return Ok(());
     }
 
-    let relations = discover_generator_relations(root)?;
-    if relations.is_empty() {
-        return Ok(());
-    }
-    let generated_attrs = generated_attribute_paths(root);
     let mut history_by_input = BTreeMap::<PathBuf, Vec<ClassifiedSourceCommit>>::new();
 
     for relation in relations {
@@ -254,8 +269,17 @@ fn diff_anchor(root: &Path, base: Option<&str>) -> Result<String, Box<dyn Error>
     }
 }
 
-fn changed_paths(root: &Path, anchor: &str) -> Result<BTreeSet<PathBuf>, Box<dyn Error>> {
-    let output = performance::git_command()
+/// Streams `git diff --name-only` over the analyzer's exact file classes:
+/// every Rust file plus the literal generated-output paths admitted by the
+/// discovered relations. Paths stream into the result set as raw Git output
+/// becomes facts; nothing output-sized is retained beyond the set itself.
+fn changed_paths(
+    root: &Path,
+    anchor: &str,
+    watched_outputs: &BTreeSet<String>,
+) -> Result<BTreeSet<PathBuf>, Box<dyn Error>> {
+    let mut command = performance::git_command();
+    command
         .arg("-C")
         .arg(root)
         .args([
@@ -267,20 +291,72 @@ fn changed_paths(root: &Path, anchor: &str) -> Result<BTreeSet<PathBuf>, Box<dyn
         ])
         .arg(anchor)
         .arg("--")
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "git diff --name-only failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        .arg("*.rs");
+    for output in watched_outputs {
+        // Literal magic disables glob interpretation so generated outputs with
+        // pathspec metacharacters match exactly.
+        command.arg(format!(":(literal){output}"));
     }
-    Ok(String::from_utf8(output.stdout)?
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(PathBuf::from)
-        .collect())
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = command.spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("git diff --name-only did not provide a stdout pipe")?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or("git diff --name-only did not provide a stderr pipe")?;
+    let stderr_reader = drain_stderr(stderr);
+
+    let paths = match stream_changed_paths(BufReader::new(stdout)) {
+        Ok(paths) => paths,
+        Err(error) => {
+            terminate_child(child, stderr_reader);
+            return Err(format!("failed to stream git diff --name-only output: {error}").into());
+        }
+    };
+
+    let status = child.wait()?;
+    let stderr_text = stderr_reader.finish();
+    if !status.success() {
+        return Err(format!("git diff --name-only failed: {stderr_text}").into());
+    }
+
+    Ok(paths)
+}
+
+fn stream_changed_paths<R: BufRead>(mut reader: R) -> std::io::Result<BTreeSet<PathBuf>> {
+    let mut paths = BTreeSet::new();
+    let mut text = String::new();
+    let mut scratch = Vec::new();
+
+    loop {
+        if read_text_line_bounded(&mut reader, &mut text, &mut scratch, MAX_PATH_LINE_BYTES)? == 0 {
+            break;
+        }
+        let line = text.trim_end_matches(['\n', '\r']);
+        if line.is_empty() {
+            continue;
+        }
+        paths.insert(decode_git_path_line(line)?);
+    }
+
+    Ok(paths)
+}
+
+fn decode_git_path_line(line: &str) -> std::io::Result<PathBuf> {
+    match git_stream::c_style_unquote(line) {
+        Ok(UnquotedPath::Verbatim) => Ok(PathBuf::from(line)),
+        Ok(UnquotedPath::Decoded(bytes)) => String::from_utf8(bytes)
+            .map(PathBuf::from)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "quoted path is not UTF-8")),
+        Err(reason) => Err(io::Error::new(io::ErrorKind::InvalidData, reason)),
+    }
 }
 
 fn source_syntax_changed(root: &Path, anchor: &str, path: &Path) -> Result<bool, Box<dyn Error>> {
@@ -306,7 +382,7 @@ fn classify_source_history(
     let considered: Vec<_> = records
         .into_iter()
         .filter(|record| {
-            !is_revert_subject(&record.subject) && record.paths.len() <= MAX_PATHS_PER_COMMIT
+            !is_revert_subject(&record.subject) && record.changed_paths <= MAX_PATHS_PER_COMMIT
         })
         .collect();
     let versions = read_source_versions(root, input, &considered)?;
@@ -382,12 +458,16 @@ fn build_syntax_cohort(history: &[ClassifiedSourceCommit], output: &Path) -> Syn
     cohort
 }
 
+/// Streams the batched `git log` feed for one input path. Raw output becomes
+/// records incrementally; once a commit crosses the broad-commit threshold its
+/// retained path strings are dropped and only counting continues, which keeps
+/// exclusion decisions exact without holding every path of a mass commit.
 fn read_source_history(
     root: &Path,
     input: &Path,
     max_commits: usize,
 ) -> Result<Vec<SourceHistoryRecord>, Box<dyn Error>> {
-    let output = performance::git_command()
+    let mut child = performance::git_command()
         .arg("-C")
         .arg(root)
         .args([
@@ -407,32 +487,142 @@ fn read_source_history(
         .arg(max_commits.to_string())
         .arg("--")
         .arg(input)
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "git log failed for {}: {}",
-            input.display(),
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("git log did not provide a stdout pipe")?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or("git log did not provide a stderr pipe")?;
+    let stderr_reader = drain_stderr(stderr);
+
+    let parsed = match stream_source_history_log(BufReader::new(stdout), MAX_PATHS_PER_COMMIT) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            terminate_child(child, stderr_reader);
+            return Err(format!(
+                "failed to stream git history for {}: {error}",
+                input.display()
+            )
+            .into());
+        }
+    };
+
+    let status = child.wait()?;
+    let stderr_text = stderr_reader.finish();
+    if !status.success() {
+        return Err(format!("git log failed for {}: {stderr_text}", input.display()).into());
     }
 
-    parse_source_history_log(&String::from_utf8(output.stdout)?)
-        .ok_or_else(|| format!("could not parse git history for {}", input.display()).into())
+    parsed.ok_or_else(|| format!("could not parse git history for {}", input.display()).into())
 }
 
-fn parse_source_history_log(output: &str) -> Option<Vec<SourceHistoryRecord>> {
-    output
-        .split('\u{1e}')
-        .filter(|record| !record.trim().is_empty())
-        .map(parse_source_history_record)
-        .collect()
+fn stream_source_history_log<R: BufRead>(
+    mut reader: R,
+    max_paths_per_commit: usize,
+) -> std::io::Result<Option<Vec<SourceHistoryRecord>>> {
+    let mut records = Vec::new();
+    let mut current: Option<SourceHistoryAccumulator> = None;
+    let mut malformed = false;
+    let mut text = String::new();
+    let mut scratch = Vec::new();
+
+    loop {
+        if read_text_line_bounded(&mut reader, &mut text, &mut scratch, MAX_LOG_LINE_BYTES)? == 0 {
+            break;
+        }
+        if malformed {
+            continue;
+        }
+
+        if let Some(metadata) = text.strip_prefix('\u{1e}') {
+            if let Some(record) = current.take() {
+                records.push(record.finish(max_paths_per_commit));
+            }
+            match source_history_summary(metadata) {
+                Some((sha, parent, subject)) => {
+                    current = Some(SourceHistoryAccumulator::new(sha, parent, subject));
+                }
+                None => malformed = true,
+            }
+        } else if let Some(accumulator) = current.as_mut() {
+            let path = text.trim_end_matches(['\n', '\r']).trim();
+            if !path.is_empty() {
+                accumulator.offer_path(max_paths_per_commit, path);
+            }
+        } else if !text.trim().is_empty() {
+            malformed = true;
+        }
+    }
+
+    if malformed {
+        return Ok(None);
+    }
+    if let Some(record) = current.take() {
+        records.push(record.finish(max_paths_per_commit));
+    }
+
+    Ok(Some(records))
 }
 
-fn parse_source_history_record(record: &str) -> Option<SourceHistoryRecord> {
-    let record = record.trim_start_matches(['\n', '\r']);
-    let mut lines = record.lines();
-    let metadata = lines.next()?.trim();
+struct SourceHistoryAccumulator {
+    sha: String,
+    parent: Option<String>,
+    subject: String,
+    paths: BTreeSet<PathBuf>,
+    counting_only: bool,
+    counted_overflow_paths: usize,
+}
+
+impl SourceHistoryAccumulator {
+    fn new(sha: String, parent: Option<String>, subject: String) -> Self {
+        Self {
+            sha,
+            parent,
+            subject,
+            paths: BTreeSet::new(),
+            counting_only: false,
+            counted_overflow_paths: 0,
+        }
+    }
+
+    fn offer_path(&mut self, max_paths_per_commit: usize, path: &str) {
+        if self.counting_only {
+            self.counted_overflow_paths += 1;
+            return;
+        }
+        self.paths.insert(PathBuf::from(path));
+        if self.paths.len() > max_paths_per_commit {
+            self.counting_only = true;
+            self.paths.clear();
+            self.counted_overflow_paths = 0;
+        }
+    }
+
+    fn finish(self, max_paths_per_commit: usize) -> SourceHistoryRecord {
+        let changed_paths = if self.counting_only {
+            max_paths_per_commit + 1 + self.counted_overflow_paths
+        } else {
+            self.paths.len()
+        };
+        SourceHistoryRecord {
+            sha: self.sha,
+            parent: self.parent,
+            subject: self.subject,
+            paths: self.paths,
+            changed_paths,
+        }
+    }
+}
+
+fn source_history_summary(metadata: &str) -> Option<(String, Option<String>, String)> {
+    let metadata = metadata.trim_end_matches(['\n', '\r']);
     let mut fields = metadata.splitn(3, '\u{1f}');
     let sha = fields.next()?.trim().to_string();
     let parent = fields
@@ -441,18 +631,7 @@ fn parse_source_history_record(record: &str) -> Option<SourceHistoryRecord> {
         .next()
         .map(ToOwned::to_owned);
     let subject = fields.next()?.trim().to_string();
-    let paths = lines
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(PathBuf::from)
-        .collect();
-
-    Some(SourceHistoryRecord {
-        sha,
-        parent,
-        subject,
-        paths,
-    })
+    Some((sha, parent, subject))
 }
 
 fn read_source_versions(
@@ -689,9 +868,11 @@ fn short_sha(sha: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::diff::build_diff_analysis_report;
 
     fn unique_temp_dir(name: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -766,12 +947,71 @@ mod tests {
             "\x1edef\x1fabc\x1fdocs: two\n\n",
             "src/input.rs\n",
         );
-        let records = parse_source_history_log(output).unwrap();
+        let records = stream_source_history_log(Cursor::new(output), MAX_PATHS_PER_COMMIT)
+            .unwrap()
+            .unwrap();
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].sha, "abc");
         assert_eq!(records[0].parent.as_deref(), Some("parent"));
         assert!(records[0].paths.contains(Path::new("generated/output.rs")));
+        assert_eq!(records[0].changed_paths, 2);
         assert_eq!(records[1].subject, "docs: two");
+        assert_eq!(records[1].changed_paths, 1);
+    }
+
+    #[test]
+    fn broad_source_commits_count_without_retaining_paths() {
+        let mut output = String::from("\x1ebroad\x1fparent\x1fmass change\n\n");
+        for index in 0..9 {
+            output.push_str(&format!("src/generated_{index}.rs\n"));
+        }
+        output.push_str("\x1enarrow\x1fbroad\x1fsmall change\n\nsrc/input.rs\n");
+
+        let records = stream_source_history_log(Cursor::new(output.as_bytes()), 4)
+            .unwrap()
+            .unwrap();
+        assert_eq!(records.len(), 2);
+        assert!(records[0].paths.is_empty());
+        assert_eq!(records[0].changed_paths, 9);
+        assert_eq!(records[1].changed_paths, 1);
+        assert_eq!(records[1].paths.len(), 1);
+    }
+
+    #[test]
+    fn duplicate_overflow_lines_are_counted_not_retained() {
+        // Crossing the threshold switches the commit to counting mode; every
+        // later path line is counted even when it duplicates an earlier one.
+        let output = "\x1ea\x1fp\x1fs\nb.rs\na.rs\na.rs\nc.rs\nd.rs\n";
+        let records = stream_source_history_log(Cursor::new(output), 2)
+            .unwrap()
+            .unwrap();
+        assert!(records[0].paths.is_empty());
+        // Two retained distinct paths + the crossing line + one counted line.
+        assert_eq!(records[0].changed_paths, 4);
+    }
+
+    #[test]
+    fn malformed_source_history_fails_without_panicking() {
+        for bad in [
+            "garbage before any record\n",
+            "\x1esha-only\x1fparent-only\n",
+            "\x1esha\x1f",
+            "\x1ea\x1fp\x1fs\np\n\x1eb\x1fp",
+        ] {
+            let parsed = stream_source_history_log(Cursor::new(bad), MAX_PATHS_PER_COMMIT).unwrap();
+            assert!(parsed.is_none(), "{bad:?} must fail closed");
+        }
+    }
+
+    #[test]
+    fn oversized_source_history_lines_fail_closed() {
+        let long_path = format!("{}\n", "p".repeat(MAX_LOG_LINE_BYTES + 1));
+        let error = stream_source_history_log(
+            Cursor::new(format!("\x1ea\x1fp\x1fs\n{long_path}").into_bytes()),
+            MAX_PATHS_PER_COMMIT,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     }
 
     #[test]
@@ -824,6 +1064,119 @@ mod tests {
         assert_eq!(cohort.support, 2);
         assert_eq!(cohort.comments_or_docs_only, 1);
         assert_eq!(cohort.unclassified, 1);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn init_generator_repo(name: &str) -> PathBuf {
+        let root = unique_temp_dir(name);
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("data")).unwrap();
+        fs::create_dir_all(root.join(".cargo")).unwrap();
+        fs::create_dir_all(root.join("packages/gen_task/src")).unwrap();
+        run_git(&root, &["init", "-q", "-b", "main"]);
+        run_git(&root, &["config", "user.email", "cultist@example.invalid"]);
+        run_git(&root, &["config", "user.name", "Cargo Cultist Tests"]);
+        fs::write(
+            root.join(".cargo/config.toml"),
+            "[alias]\ngen = \"run -p gen_task\"\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("packages/gen_task/Cargo.toml"),
+            "[package]\nname = \"gen_task\"\nversion = \"0.0.0\"\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("packages/gen_task/src/main.rs"),
+            concat!(
+                "fn generate() -> std::io::Result<()> {\n",
+                "    let root = project_root::get_project_root()\n",
+                "        .map_err(|error| std::io::Error::other(error.to_string()))?;\n",
+                "    let source = std::fs::read_to_string(root.join(\"src/input.rs\"))?;\n",
+                "    let target = root.join(\"data/out.json\");\n",
+                "    std::fs::write(&target, source)?;\n",
+                "    Ok(())\n",
+                "}\n",
+            ),
+        )
+        .unwrap();
+        fs::write(
+            root.join(".gitattributes"),
+            "data/out.json linguist-generated=true\n",
+        )
+        .unwrap();
+        root
+    }
+
+    fn write_pair(root: &Path, value: usize, include_output: bool) {
+        if value == 0 {
+            fs::write(root.join("src/input.rs"), "fn value() -> usize { 0 }\n").unwrap();
+            write_output(root, 0);
+        } else {
+            fs::write(
+                root.join("src/input.rs"),
+                format!("// v{value}\nfn value() -> usize {{ {value} }}\n"),
+            )
+            .unwrap();
+            if include_output {
+                write_output(root, value);
+            }
+        }
+    }
+
+    fn write_output(root: &Path, value: usize) {
+        fs::write(
+            root.join("data/out.json"),
+            // Non-.rs generated output: only the literal-output pathspec keeps
+            // its diff membership exact.
+            format!("@generated do not edit\n{{\"value\": {value}}}\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn restricted_pathspec_keeps_non_rust_generated_outputs_exact_end_to_end() {
+        let root = init_generator_repo("pathspec-e2e");
+        write_pair(&root, 0, true);
+        run_git(&root, &["add", "."]);
+        run_git(&root, &["commit", "-q", "-m", "baseline"]);
+
+        for value in 1..=4 {
+            write_pair(&root, value, true);
+            run_git(&root, &["add", "."]);
+            run_git(&root, &["commit", "-q", "-m", &format!("regen {value}")]);
+        }
+
+        // Working tree: input syntax changes together with its non-Rust
+        // generated companion. Exact output membership means no finding.
+        write_pair(&root, 5, true);
+        let analysis = build_diff_analysis_report(&root, None).unwrap();
+        assert!(
+            analysis
+                .findings
+                .iter()
+                .all(|finding| finding.kind != "generated-companion-missing"),
+            "companion changed with the input; expected no missing-companion finding"
+        );
+
+        // Control: restore the companion, regenerate the input alone, and the
+        // finding must appear.
+        write_output(&root, 4);
+        write_pair(&root, 6, false);
+        let analysis = build_diff_analysis_report(&root, None).unwrap();
+        assert!(
+            analysis
+                .findings
+                .iter()
+                .any(|finding| finding.kind == "generated-companion-missing"),
+            "stale non-.rs companion must be reported; claims: {:?}",
+            analysis
+                .claims
+                .iter()
+                .map(|claim| claim.message.clone())
+                .collect::<Vec<_>>()
+        );
 
         fs::remove_dir_all(root).unwrap();
     }
