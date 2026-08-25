@@ -178,6 +178,7 @@ pub fn parse_agent_experience_batch(
             "agent experience batch exceeds the {MAX_AGENT_EXPERIENCE_BATCH_BYTES}-byte limit"
         )));
     }
+
     let batch: AgentExperienceBatch = serde_json::from_slice(bytes).map_err(|error| {
         AgentExperienceError::new(format!("invalid agent experience JSON: {error}"))
     })?;
@@ -223,6 +224,7 @@ fn validate_episode(episode: &AgentExperienceEpisode) -> Result<(), AgentExperie
     if let Some(failure_class) = &episode.failure_class {
         validate_atom(failure_class, "failure_class", MAX_ID_BYTES)?;
     }
+
     validate_reference_set(&episode.evidence_refs, "evidence_refs", false)?;
     validate_reference_set(&episode.counterexample_refs, "counterexample_refs", true)?;
     validate_reference_set(
@@ -242,8 +244,7 @@ fn validate_episode(episode: &AgentExperienceEpisode) -> Result<(), AgentExperie
             "roles must be bounded and non-empty",
         ));
     }
-    let unique_roles = episode.roles.iter().copied().collect::<BTreeSet<_>>();
-    if unique_roles.len() != episode.roles.len() {
+    if episode.roles.iter().copied().collect::<BTreeSet<_>>().len() != episode.roles.len() {
         return Err(AgentExperienceError::new("roles must be unique"));
     }
 
@@ -252,7 +253,7 @@ fn validate_episode(episode: &AgentExperienceEpisode) -> Result<(), AgentExperie
             "discriminators must be bounded and non-empty",
         ));
     }
-    let mut discriminator_by_id = BTreeMap::new();
+    let mut discriminators = BTreeMap::new();
     for discriminator in &episode.discriminators {
         validate_atom(&discriminator.id, "discriminator id", MAX_ID_BYTES)?;
         validate_atom(&discriminator.key, "discriminator key", MAX_ID_BYTES)?;
@@ -262,7 +263,7 @@ fn validate_episode(episode: &AgentExperienceEpisode) -> Result<(), AgentExperie
             "discriminator source_ref",
             MAX_TEXT_BYTES,
         )?;
-        if discriminator_by_id
+        if discriminators
             .insert(discriminator.id.as_str(), discriminator)
             .is_some()
         {
@@ -294,15 +295,12 @@ fn validate_episode(episode: &AgentExperienceEpisode) -> Result<(), AgentExperie
     if episode.persistence.len() > MAX_ITEMS {
         return Err(AgentExperienceError::new("too many persistence artifacts"));
     }
-    let mut persistence_by_id = BTreeMap::new();
+    let mut persistence = BTreeMap::new();
     for artifact in &episode.persistence {
         validate_atom(&artifact.id, "persistence id", MAX_ID_BYTES)?;
         validate_text(&artifact.reference, "persistence reference", MAX_TEXT_BYTES)?;
         validate_text(&artifact.effect, "persistence effect", MAX_TEXT_BYTES)?;
-        if persistence_by_id
-            .insert(artifact.id.as_str(), artifact)
-            .is_some()
-        {
+        if persistence.insert(artifact.id.as_str(), artifact).is_some() {
             return Err(AgentExperienceError::new(format!(
                 "duplicate persistence id {}",
                 artifact.id
@@ -317,7 +315,7 @@ fn validate_episode(episode: &AgentExperienceEpisode) -> Result<(), AgentExperie
     }
     let mut lesson_ids = BTreeSet::new();
     for lesson in &episode.lessons {
-        validate_lesson(lesson, &discriminator_by_id, &persistence_by_id)?;
+        validate_lesson(lesson, &discriminators, &persistence)?;
         if !lesson_ids.insert(lesson.id.as_str()) {
             return Err(AgentExperienceError::new(format!(
                 "duplicate lesson id {}",
@@ -326,11 +324,7 @@ fn validate_episode(episode: &AgentExperienceEpisode) -> Result<(), AgentExperie
         }
     }
 
-    validate_repository_set(
-        &episode.validated_repositories,
-        "validated_repositories",
-        false,
-    )?;
+    validate_repository_set(&episode.validated_repositories, "validated_repositories")?;
     if !episode
         .validated_repositories
         .iter()
@@ -341,27 +335,25 @@ fn validate_episode(episode: &AgentExperienceEpisode) -> Result<(), AgentExperie
         ));
     }
 
-    if let Some(cost) = &episode.cost {
-        if cost.input_tokens.is_none()
-            && cost.output_tokens.is_none()
-            && cost.reasoning_tokens.is_none()
-            && cost.hosted_ci_runs.is_none()
-            && cost.repair_turns.is_none()
-        {
-            return Err(AgentExperienceError::new(
-                "cost must preserve at least one exact observed quantity",
-            ));
-        }
+    if let Some(cost) = &episode.cost
+        && cost.input_tokens.is_none()
+        && cost.output_tokens.is_none()
+        && cost.reasoning_tokens.is_none()
+        && cost.hosted_ci_runs.is_none()
+        && cost.repair_turns.is_none()
+    {
+        return Err(AgentExperienceError::new(
+            "cost must preserve at least one exact observed quantity",
+        ));
     }
 
-    validate_role_contracts(episode, &persistence_by_id)?;
-    Ok(())
+    validate_role_contracts(episode, &persistence)
 }
 
 fn validate_lesson(
     lesson: &ExperienceLesson,
-    discriminator_by_id: &BTreeMap<&str, &ExperienceDiscriminator>,
-    persistence_by_id: &BTreeMap<&str, &PersistenceArtifact>,
+    discriminators: &BTreeMap<&str, &ExperienceDiscriminator>,
+    persistence: &BTreeMap<&str, &PersistenceArtifact>,
 ) -> Result<(), AgentExperienceError> {
     validate_atom(&lesson.id, "lesson id", MAX_ID_BYTES)?;
     validate_text(&lesson.statement, "lesson statement", MAX_TEXT_BYTES)?;
@@ -379,24 +371,23 @@ fn validate_lesson(
         )));
     }
     let mut seen_discriminators = BTreeSet::new();
-    for discriminator in &lesson.discriminator_refs {
-        validate_atom(discriminator, "lesson discriminator_ref", MAX_ID_BYTES)?;
-        if !discriminator_by_id.contains_key(discriminator.as_str()) {
+    for discriminator_ref in &lesson.discriminator_refs {
+        validate_atom(discriminator_ref, "lesson discriminator_ref", MAX_ID_BYTES)?;
+        if !discriminators.contains_key(discriminator_ref.as_str()) {
             return Err(AgentExperienceError::new(format!(
                 "lesson {} references unknown discriminator {}",
-                lesson.id, discriminator
+                lesson.id, discriminator_ref
             )));
         }
-        if !seen_discriminators.insert(discriminator.as_str()) {
+        if !seen_discriminators.insert(discriminator_ref.as_str()) {
             return Err(AgentExperienceError::new(format!(
                 "lesson {} repeats discriminator {}",
-                lesson.id, discriminator
+                lesson.id, discriminator_ref
             )));
         }
     }
-
     if !lesson.discriminator_refs.iter().any(|reference| {
-        discriminator_by_id
+        discriminators
             .get(reference.as_str())
             .is_some_and(|discriminator| discriminator.kind == DiscriminatorKind::Applicability)
     }) {
@@ -413,18 +404,18 @@ fn validate_lesson(
         )));
     }
     let mut seen_persistence = BTreeSet::new();
-    for persistence in &lesson.persistence_refs {
-        validate_atom(persistence, "lesson persistence_ref", MAX_ID_BYTES)?;
-        if !persistence_by_id.contains_key(persistence.as_str()) {
+    for persistence_ref in &lesson.persistence_refs {
+        validate_atom(persistence_ref, "lesson persistence_ref", MAX_ID_BYTES)?;
+        if !persistence.contains_key(persistence_ref.as_str()) {
             return Err(AgentExperienceError::new(format!(
                 "lesson {} references unknown persistence artifact {}",
-                lesson.id, persistence
+                lesson.id, persistence_ref
             )));
         }
-        if !seen_persistence.insert(persistence.as_str()) {
+        if !seen_persistence.insert(persistence_ref.as_str()) {
             return Err(AgentExperienceError::new(format!(
                 "lesson {} repeats persistence artifact {}",
-                lesson.id, persistence
+                lesson.id, persistence_ref
             )));
         }
     }
@@ -435,13 +426,12 @@ fn validate_lesson(
             lesson.id
         )));
     }
-
     Ok(())
 }
 
 fn validate_role_contracts(
     episode: &AgentExperienceEpisode,
-    persistence_by_id: &BTreeMap<&str, &PersistenceArtifact>,
+    persistence: &BTreeMap<&str, &PersistenceArtifact>,
 ) -> Result<(), AgentExperienceError> {
     let has_role = |role| episode.roles.contains(&role);
 
@@ -468,7 +458,7 @@ fn validate_role_contracts(
     }
 
     if has_role(ExperienceRole::PromotedDeterministicCheck) {
-        let deterministic_ids = persistence_by_id
+        let deterministic_ids = persistence
             .iter()
             .filter_map(|(id, artifact)| {
                 (artifact.kind == PersistenceKind::DeterministicCheck).then_some(*id)
@@ -479,14 +469,14 @@ fn validate_role_contracts(
                 "promoted_deterministic_check role requires a deterministic_check artifact",
             ));
         }
-        let promoted_refs_check = episode.lessons.iter().any(|lesson| {
+        let promoted_lesson_points_to_check = episode.lessons.iter().any(|lesson| {
             lesson.status == LessonStatus::Promoted
                 && lesson
                     .persistence_refs
                     .iter()
                     .any(|reference| deterministic_ids.contains(reference.as_str()))
         });
-        if !promoted_refs_check {
+        if !promoted_lesson_points_to_check {
             return Err(AgentExperienceError::new(
                 "promoted_deterministic_check role requires a promoted lesson to reference the check",
             ));
@@ -567,15 +557,10 @@ fn validate_reference_set(
     Ok(())
 }
 
-fn validate_repository_set(
-    values: &[String],
-    field: &str,
-    allow_empty: bool,
-) -> Result<(), AgentExperienceError> {
-    if (!allow_empty && values.is_empty()) || values.len() > MAX_ITEMS {
+fn validate_repository_set(values: &[String], field: &str) -> Result<(), AgentExperienceError> {
+    if values.is_empty() || values.len() > MAX_ITEMS {
         return Err(AgentExperienceError::new(format!(
-            "{field} must be bounded{}",
-            if allow_empty { "" } else { " and non-empty" }
+            "{field} must be bounded and non-empty"
         )));
     }
     let mut seen = BTreeSet::new();
