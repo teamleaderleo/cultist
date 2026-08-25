@@ -76,7 +76,11 @@ fn integration_episode_keeps_review_and_integration_defect_classes_separate() {
 
     assert!(episode.roles.contains(&ExperienceRole::EnvironmentDefect));
     assert!(episode.roles.contains(&ExperienceRole::ReviewMiss));
-    assert!(episode.roles.contains(&ExperienceRole::IntegrationOnlyDefect));
+    assert!(
+        episode
+            .roles
+            .contains(&ExperienceRole::IntegrationOnlyDefect)
+    );
     assert_eq!(episode.cost.as_ref().unwrap().repair_turns, Some(1));
     assert!(episode.discriminators.iter().any(|discriminator| {
         discriminator.id == "local-typecheck-unavailable"
@@ -94,8 +98,7 @@ fn rejected_and_weakened_lessons_survive_beside_promoted_ones() {
         .find(|episode| episode.id == "stensibly/run-03-git-metadata-capability")
         .unwrap();
     assert!(capability.lessons.iter().any(|lesson| {
-        lesson.id == "workspace-write-implies-git-write"
-            && lesson.status == LessonStatus::Rejected
+        lesson.id == "workspace-write-implies-git-write" && lesson.status == LessonStatus::Rejected
     }));
     assert!(capability.lessons.iter().any(|lesson| {
         lesson.id == "separate-git-authority" && lesson.status == LessonStatus::Promoted
@@ -110,8 +113,7 @@ fn rejected_and_weakened_lessons_survive_beside_promoted_ones() {
         lesson.id == "risk-alone-routes-high" && lesson.status == LessonStatus::Weakened
     }));
     assert!(routing.lessons.iter().any(|lesson| {
-        lesson.id == "ambiguity-discrimination-routing"
-            && lesson.status == LessonStatus::Candidate
+        lesson.id == "ambiguity-discrimination-routing" && lesson.status == LessonStatus::Candidate
     }));
     assert_eq!(routing.cost.as_ref().unwrap().input_tokens, Some(632_503));
 }
@@ -122,20 +124,28 @@ fn operator_rejection_can_persist_as_counterexample_test_without_promotion() {
     let episode = batch
         .episodes
         .iter()
-        .find(|episode| {
-            episode.id == "stensibly/run-03h-combined-failure-rejected-proposal"
-        })
+        .find(|episode| episode.id == "stensibly/run-03h-combined-failure-rejected-proposal")
         .unwrap();
 
-    assert!(episode.roles.contains(&ExperienceRole::OperatorIntervention));
+    assert!(
+        episode
+            .roles
+            .contains(&ExperienceRole::OperatorIntervention)
+    );
     assert!(episode.roles.contains(&ExperienceRole::RejectedLesson));
     assert_eq!(episode.interventions.len(), 1);
-    assert!(episode.lessons.iter().all(|lesson| {
-        lesson.status != LessonStatus::Promoted
-    }));
-    assert!(episode.persistence.iter().any(|artifact| {
-        artifact.kind == PersistenceKind::CounterexampleTest
-    }));
+    assert!(
+        episode
+            .lessons
+            .iter()
+            .all(|lesson| { lesson.status != LessonStatus::Promoted })
+    );
+    assert!(
+        episode
+            .persistence
+            .iter()
+            .any(|artifact| { artifact.kind == PersistenceKind::CounterexampleTest })
+    );
 }
 
 #[test]
@@ -172,8 +182,7 @@ fn retained_luna_null_result_does_not_promote_treatment_equivalence() {
     );
     assert!(!episode.behavioral_evaluation_refs.is_empty());
     assert!(episode.lessons.iter().any(|lesson| {
-        lesson.id == "detail-always-changes-first-action"
-            && lesson.status == LessonStatus::Rejected
+        lesson.id == "detail-always-changes-first-action" && lesson.status == LessonStatus::Rejected
     }));
     assert!(episode.lessons.iter().any(|lesson| {
         lesson.id == "test-leaner-control" && lesson.status == LessonStatus::Candidate
@@ -246,11 +255,7 @@ fn intervention_receipts_require_the_matching_role() {
         .retain(|role| *role != ExperienceRole::OperatorIntervention);
 
     let error = validate_agent_experience_batch(&batch).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("intervention receipts require")
-    );
+    assert!(error.to_string().contains("intervention receipts require"));
 }
 
 #[test]
