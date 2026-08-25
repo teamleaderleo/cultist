@@ -89,7 +89,7 @@ jobs:
           }
           PY
 
-      - name: Checkout SmolRunner #540 base
+      - name: Checkout Glaeda historical #540 base
         uses: actions/checkout@v4
         with:
           repository: teamleaderleo/smolrunner
@@ -98,7 +98,7 @@ jobs:
           persist-credentials: false
           path: target-smolrunner
 
-      - name: Verify SmolRunner single-path evidence
+      - name: Verify Glaeda historical single-path evidence
         run: |
           set -euo pipefail
           test "$(git -C target-smolrunner rev-parse HEAD)" = "c8cb347eb1c85200793fd22693294f5f6a13f5f8"
@@ -113,7 +113,7 @@ jobs:
             exit 1
           fi
 
-      - name: Replay SmolRunner single-path control
+      - name: Replay Glaeda historical single-path control
         run: |
           set -euo pipefail
           python cultist/scripts/jei_change_scope_pilot.py \
@@ -141,7 +141,7 @@ jobs:
 
           cases = [
               ("Stensibly #1573 multi-path", Path("artifacts/stensibly-1573-change-scope.json")),
-              ("SmolRunner #540 single-path", Path("artifacts/smolrunner-540-change-scope.json")),
+              ("Glaeda historical corpus (SmolRunner #540) · single-path", Path("artifacts/smolrunner-540-change-scope.json")),
           ]
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as out:
               out.write("## Change-set-driven scope pilot\n\n")
