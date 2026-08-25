@@ -4,18 +4,9 @@ Status: research carrier for #41, #74, #106, #137, and #148.
 
 ## Question
 
-Can yesterday's agent work make a later worker measurably cheaper, more reliable, or less likely to repeat the same wrong turn while preserving:
+Can yesterday's agent work make a later worker measurably cheaper, more reliable, or less likely to repeat the same wrong turn while preserving exact applicability, counterexamples, rejected candidates, operator interventions, and behavioral receipts?
 
-```text
-what happened
-when the lesson applies
-which counterexamples weaken it
-what an operator changed
-what earned deterministic persistence
-what remains rejected / provisional / behaviorally null
-```
-
-The v1 carrier records agent-work experience. Existing Cultist lanes continue to own selection, reviewed memory, promotion, and behavioral evaluation.
+V1 records experience. Existing Cultist lanes continue to own selection, reviewed memory, promotion, and behavioral evaluation.
 
 ## Existing owners
 
@@ -42,19 +33,19 @@ The v1 carrier records agent-work experience. Existing Cultist lanes continue to
   receiver-side behavioral evaluation
 ```
 
-The missing question is narrower:
+The missing carrier is narrower:
 
 > Which exact agent-work episode should those systems be able to reference later?
 
 ## V1 contract
 
-`src/agent_experience_episode.rs` admits a bounded batch with:
+`src/agent_experience_episode.rs` admits a bounded batch carrying:
 
 ```text
 identity
   episode id
   repository
-  exact revision when one episode has one useful revision
+  exact revision when one revision is useful
   work / run identity
 
 classification
@@ -104,11 +95,11 @@ cross-repository evidence
 automatic_policy_authority = false
 ```
 
-The last field fails closed. The episode can record promotion while the promoted code/test/decision remains the authoritative artifact.
+The episode may record a promotion. The promoted code, test, check, or reviewed decision remains authoritative.
 
-## Roles
+## Evidence roles
 
-The first real corpus needs these distinctions:
+The current dogfood needs these distinctions:
 
 ```text
 context_brief_defect
@@ -124,7 +115,7 @@ operator_intervention
 behavioral_null_result
 ```
 
-`failure_class` stays source-supplied. The corpus has evidence for these roles; it has yet to earn a universal agent-failure ontology.
+`failure_class` stays source-supplied. Current evidence supports these roles; a universal agent-failure ontology would require more cases.
 
 ## Applicability before generalization
 
@@ -137,33 +128,28 @@ outcome
 
 Every lesson must name at least one applicability discriminator.
 
-Example:
+Run 05A gives the clearest longitudinal example:
 
 ```text
-Run 05A
-
 applicability
   planned_validation_command = cargo
   worker_path_contains_command = false
 
-observed cost
+historical outcome
+  model launched
   input_tokens = 632,503
+  required executable discovered missing later
 
-persistence
+promoted persistence
   --require-command preflight
 ```
 
-That is enough to test the longitudinal claim directly:
+The next replay can measure the exact improvement:
 
 ```text
-yesterday
-  impossible worker launches
-  missing command discovered later
-  632,503 input tokens consumed
-
-tomorrow
-  exact required-command preflight fails before model launch
-  model input tokens spent on the impossible launch = 0
+model_spawned = false
+input_tokens = 0
+first_failure_surface = deterministic preflight
 ```
 
 ## Lesson status and persistence stay separate
@@ -193,15 +179,7 @@ reusable_technique
 
 A promoted lesson must name an explicit persistence artifact. A `promoted_deterministic_check` role additionally requires a real deterministic-check artifact.
 
-This lets the corpus retain all of these at once:
-
-```text
-successful reusable technique
-rejected proposal
-weakened routing heuristic
-promoted executable check
-behavioral null
-```
+That lets one corpus retain useful technique, rejected proposal, weakened routing heuristic, promoted executable check, and behavioral null without collapsing them into one authority level.
 
 ## Real dogfood corpus
 
@@ -211,9 +189,9 @@ The retained fixture is:
 research/agent-experience-episodes/sol-luna-dogfood-v1.json
 ```
 
-It contains eight executed episodes.
+It contains nine executed episodes.
 
-### Run 01: unsafe read boundary
+### 1. Run 01: unsafe read boundary
 
 ```text
 context_brief_defect
@@ -221,20 +199,19 @@ operator_intervention
 promoted_deterministic_check
 ```
 
-A Luna attempt crossed an information boundary. Sol stopped it, discarded the contaminated transcript, tightened the brief, and later runner work compiled read scope into a mechanical permission profile.
+A Luna attempt crossed an information boundary. Sol stopped it, discarded the contaminated transcript, and tightened the brief. Later runner work compiled read scope into a mechanical permission profile.
 
-The promoted object is the permission profile. The stopped trajectory stays as the source episode.
+The permission profile is the promoted object. The stopped trajectory stays as source evidence for why it exists.
 
-### Run 01: focused review versus integration
+### 2. Run 01: focused review versus integration
 
 ```text
 environment_defect
-review_miss
 integration_only_defect
 operator_intervention
 ```
 
-The focused exact-head reviewer accepted the candidate. Strict TypeScript checking was unavailable in the worker/reviewer checkout. Repository-wide CI later found a real TypeScript defect cluster and caused one repair turn.
+The focused exact-head reviewer accepted the candidate within its semantic scope. Strict TypeScript checking was unavailable in the worker/reviewer checkout. Repository-wide CI later found a separate TypeScript defect cluster and caused one repair turn.
 
 The reusable lesson is conditional:
 
@@ -244,9 +221,33 @@ promised gate unavailable locally
 -> focused acceptance remains provisional
 ```
 
-Semantic review and repository integration remain different defect surfaces.
+This episode deliberately carries no `review_miss` role. Semantic review and repository integration exercised different defect surfaces.
 
-### Run 03: Git metadata capability
+### 3. Palisade audit: a real review miss
+
+```text
+review_miss
+rejected_lesson
+```
+
+Stensibly #1661 passed its own tests and focused review. Palisade's post-merge audit then demonstrated four unattended-operation defects carried into #1665:
+
+```text
+unhandled EPIPE after a success receipt
+hung child with no bounded cleanup / receipt
+stale output plus non-atomic receipt publication
+pre-existing dirt attributed as worker-caused change
+```
+
+The corpus rejects the broad candidate:
+
+```text
+passing focused review and its own tests proves unattended lifecycle hazards are covered
+```
+
+It retains a narrower review cue: when unattended operation is in scope, use adversarial lifecycle probes that exercise those failure modes.
+
+### 4. Run 03: Git metadata capability
 
 ```text
 worker_capability_defect
@@ -254,7 +255,7 @@ rejected_lesson
 promoted_deterministic_check
 ```
 
-A review hypothesis treated `workspace-write` as evidence of `.git` write authority. A physical probe falsified it.
+A review hypothesis treated `workspace-write` as evidence of `.git` write authority. A physical probe falsified it and exposed a separate runner capability contract.
 
 The episode keeps both transitions:
 
@@ -266,7 +267,7 @@ promoted
   Git metadata write authority requires its own capability preflight
 ```
 
-### Run 03H: rejected combined-failure proposal
+### 5. Run 03H: rejected combined-failure proposal
 
 ```text
 rejected_lesson
@@ -275,16 +276,16 @@ operator_intervention
 
 A verification worker proposed replacing a simultaneous non-zero child outcome with a retention failure. Sol rejected that proposal.
 
-A combined-failure regression now preserves both:
+A combined-failure regression now preserves both causes:
 
 ```text
 worker_failed
 harnessError
 ```
 
-The rejected candidate can later surface when the same semantics recur, while unrelated work stays quiet.
+The rejected candidate can surface when the same semantics recur and remain quiet for unrelated work.
 
-### Run 05A: missing required executable
+### 6. Run 05A: missing required executable
 
 ```text
 environment_defect
@@ -301,13 +302,13 @@ input_tokens = 632,503
 
 Stensibly #1667 promoted the lesson into `--require-command`, which fails before authentication/model launch when the declared executable is absent.
 
-### Run 05: review-effort routing counterexample
+### 7. Run 05: review-effort routing counterexample
 
 ```text
 counterexample_to_routing_heuristic
 ```
 
-The same Run 05 wave supplies this narrow counterexample:
+The same Run 05 wave supplies a narrow counterexample:
 
 ```text
 High review
@@ -318,7 +319,7 @@ later bounded Low review on the smaller preflight follow-up
   found executable-directory false positive
 ```
 
-The heads differ, so the earned conclusion is:
+The heads differ. The earned conclusion is:
 
 ```text
 risk-alone-routes-high = weakened
@@ -332,9 +333,9 @@ ambiguity and expected discrimination value belong beside consequence
 
 A same-head replay is the next discriminator.
 
-The separate 2,247,548-token repair-review receipt belongs to the earlier Run 01 sequence. It remains source evidence for review-cost calibration and is deliberately excluded from this Run 05 episode.
+The separate 2,247,548-token repair-review receipt belongs to the earlier Run 01 sequence and stays outside this Run 05 episode.
 
-### Portfolio: exact-head independent review
+### 8. Portfolio: exact-head independent review
 
 ```text
 cross_repository_reusable_technique
@@ -350,9 +351,9 @@ teamleaderleo/smolrunner
 teamleaderleo/elatura
 ```
 
-The technique carries an explicit limit from Run 01: independent semantic review can be useful while repository integration later finds a different defect class.
+The technique carries an explicit limit from Run 01: focused semantic review can be correct within its scope while repository integration later finds a separate defect class.
 
-### Cultist #352: Luna Max null pair
+### 9. Cultist #352: Luna Max null pair
 
 ```text
 behavioral_null_result
@@ -378,31 +379,29 @@ or vary the worker tier
 
 V1 stops before relevance discovery.
 
-A useful composition is:
+A useful composition with current Cultist work is:
 
 ```text
 current task
 -> #106 / source adapter identifies candidate episodes
--> existing repository/revision/work/path applicability applies
+-> repository/revision/work/path applicability applies
 -> episode applicability discriminators are checked
 -> rejected / weakened / promoted status remains visible
 -> #217-style front projects the smallest action-changing item
 -> #137 observes receiver behavior
 ```
 
-Three rules guide the next experiment.
-
 ### Deterministic artifact first
 
 When a lesson earned a deterministic check, run the check first.
 
-Healthy result:
+Healthy case:
 
 ```text
 stay quiet
 ```
 
-Failing result:
+Failing case:
 
 ```text
 current check result
@@ -411,42 +410,25 @@ promoted artifact
 minimal source episode ref
 ```
 
-The disposable worker can skip the retrospective prose.
+A disposable worker can skip the retrospective prose.
 
 ### Rejected and weakened lessons are conditional anti-repetition evidence
 
-Surface a rejected/weakened lesson when:
+Surface one when current applicability matches or the worker proposes the same candidate. Keep it queryable elsewhere.
 
-```text
-current applicability matches
-or
-current worker proposes the same candidate
-```
-
-Keep it queryable elsewhere.
-
-This makes operator rejection useful without converting one historical decision into universal doctrine.
+Run 03H is the prototype: recurrence should surface the rejected override plus its counterexample test; unrelated harness work should receive nothing from that episode.
 
 ### Behavioral evidence changes delivery pressure
 
-Behavioral receipts can justify:
+Behavioral receipts can justify foregrounding an episode family, weakening a treatment, changing the control packet, or running a stronger discriminator. Source evidence and repository authority remain separate.
 
-```text
-foreground this family
-weaken this treatment
-change the control packet
-run a stronger discriminator
-```
-
-Source evidence, applicability, and repository authority remain separate.
-
-The #352 null pair is the current negative control.
+Cultist #352 is the current negative control.
 
 ## Small next experiments
 
 ### A. Required-command longitudinal proof
 
-Freeze a task that requires Cargo and a worker PATH without Cargo.
+Freeze a task requiring Cargo and a worker PATH without Cargo.
 
 Record:
 
@@ -457,15 +439,7 @@ first_failure_surface
 operator_intervention_required
 ```
 
-Expected promoted-arm result:
-
-```text
-model_spawned = false
-input_tokens = 0
-first_failure_surface = deterministic preflight
-```
-
-This is the clearest current cost-reduction experiment.
+The promoted arm should reject before model launch and spend zero model input tokens on the impossible launch.
 
 ### B. Same-head review-effort pair
 
@@ -506,22 +480,29 @@ Measure premature final acceptance.
 
 One task recreates the Run 03H combined-failure semantics. One task is unrelated harness work.
 
-Expected behavior:
+Expected result:
 
 ```text
 same semantics -> rejected episode + counterexample test surfaces
 unrelated work -> quiet
 ```
 
-### E. Cross-repository review replay
+### E. Review-miss versus integration-only replay
 
-Use held-out candidates from at least two repositories and keep integration-only outcomes separate from review outcomes.
+Give the coordinator two held-out cases:
+
+```text
+unattended lifecycle hazard matching Palisade discriminators
+repository-only integration failure matching Run 01 gate conditions
+```
+
+Success requires selecting the Palisade review cue for the first case and the provisional-integration lesson for the second. This directly tests whether the representation preserves the defect-class distinction.
 
 ### F. Leaner Luna control
 
 Repeat #352 with a leaner control or another worker tier.
 
-Also test the harness observation from #352: remove irrelevant skill context and measure whether the roughly 17.7K input-token startup burden falls while first-action behavior stays stable.
+Also remove irrelevant skill context and measure whether the roughly 17.7K input-token startup burden falls while first-action behavior stays stable.
 
 ## Hierarchy behavior
 
@@ -555,7 +536,7 @@ versioned guidance
 exact evidence receipts
 ```
 
-The hierarchy improves when the long-running layer converts experience into better evidence and the disposable layer receives only the earned, applicable slice.
+The long-running layer converts experience into better evidence. The disposable layer receives the earned, applicable slice.
 
 ## Reader and validation
 
