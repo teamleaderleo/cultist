@@ -76,7 +76,6 @@
       "failure_class": "strict_typecheck_unavailable_before_integration",
       "roles": [
         "environment_defect",
-        "review_miss",
         "integration_only_defect",
         "operator_intervention"
       ],
@@ -148,6 +147,84 @@
         "hosted_ci_runs": null,
         "repair_turns": 1
       },
+      "behavioral_evaluation_refs": [],
+      "validated_repositories": ["teamleaderleo/stensibly"],
+      "automatic_policy_authority": false
+    },
+    {
+      "id": "stensibly/pr1661-palisade-review-miss",
+      "repository": "teamleaderleo/stensibly",
+      "revision": "95748b009896267810c60da95a1fc50492043bb2",
+      "work": "palisade-post-merge-audit-1661",
+      "failure_class": "unattended_operation_defects_survived_initial_review_and_tests",
+      "roles": ["review_miss", "rejected_lesson"],
+      "discriminators": [
+        {
+          "id": "palisade-unattended-operation-scope",
+          "kind": "applicability",
+          "key": "audit_scope",
+          "value": "unattended_operation",
+          "source_ref": "teamleaderleo/stensibly#1665"
+        },
+        {
+          "id": "prior-focused-acceptance",
+          "kind": "applicability",
+          "key": "prior_focused_review",
+          "value": "accepted_no_findings",
+          "source_ref": "teamleaderleo/stensibly#1661"
+        },
+        {
+          "id": "palisade-defects-found",
+          "kind": "outcome",
+          "key": "demonstrated_unattended_operation_defects",
+          "value": "4",
+          "source_ref": "teamleaderleo/stensibly#1665"
+        }
+      ],
+      "evidence_refs": [
+        "teamleaderleo/stensibly#1661",
+        "teamleaderleo/stensibly#1665"
+      ],
+      "counterexample_refs": [
+        "teamleaderleo/stensibly#1665: EPIPE after success receipt, unbounded hung child, stale/non-atomic evidence, and dirty-path misattribution survived the earlier review/test path"
+      ],
+      "interventions": [],
+      "lessons": [
+        {
+          "id": "focused-review-proves-unattended-lifecycle",
+          "statement": "Treat passing focused review and its own tests as proof that unattended lifecycle hazards are covered.",
+          "status": "rejected",
+          "discriminator_refs": [
+            "palisade-unattended-operation-scope",
+            "prior-focused-acceptance",
+            "palisade-defects-found"
+          ],
+          "counterexample_refs": ["teamleaderleo/stensibly#1665"],
+          "persistence_refs": ["palisade-adversarial-lifecycle-cue"],
+          "source_refs": ["teamleaderleo/stensibly#1665"]
+        },
+        {
+          "id": "adversarial-lifecycle-probes",
+          "statement": "Use adversarial lifecycle probes when unattended worker operation is in scope.",
+          "status": "retained",
+          "discriminator_refs": [
+            "palisade-unattended-operation-scope",
+            "palisade-defects-found"
+          ],
+          "counterexample_refs": [],
+          "persistence_refs": ["palisade-adversarial-lifecycle-cue"],
+          "source_refs": ["teamleaderleo/stensibly#1665"]
+        }
+      ],
+      "persistence": [
+        {
+          "id": "palisade-adversarial-lifecycle-cue",
+          "kind": "review_cue",
+          "reference": "teamleaderleo/stensibly#1665",
+          "effect": "retains the exact unattended-operation defect set and adversarial probes for future lifecycle review"
+        }
+      ],
+      "cost": null,
       "behavioral_evaluation_refs": [],
       "validated_repositories": ["teamleaderleo/stensibly"],
       "automatic_policy_authority": false
