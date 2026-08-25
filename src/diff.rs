@@ -789,6 +789,37 @@ mod tests {
         }
     }
 
+    /// Forges an aggregate payload that passes every pre-seal check: current
+    /// schema, matching fingerprint, and internally coherent count/total
+    /// arithmetic — while keeping the original integrity seal.
+    fn coherently_fabricate_scope_entries(scope_root: &Path) {
+        for entry in fs::read_dir(scope_root).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let mut envelope: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            {
+                let counts = envelope
+                    .get_mut("name_counts")
+                    .and_then(|value| value.as_object_mut())
+                    .expect("aggregate entry must carry name_counts");
+                counts.insert(
+                    "fabricated_tests".to_string(),
+                    serde_json::Value::from(1_000),
+                );
+            }
+            let object = envelope.as_object_mut().unwrap();
+            let total = object
+                .get("total")
+                .and_then(|value| value.as_u64())
+                .unwrap_or_default();
+            object.insert("total".to_string(), serde_json::Value::from(total + 1_000));
+            fs::write(&path, serde_json::to_vec(&envelope).unwrap()).unwrap();
+        }
+    }
+
     #[test]
     fn warm_small_diff_matches_full_scan_and_scales_with_affected_scope() {
         let root = init_multi_scope_repo("warm-small-diff");
@@ -859,6 +890,49 @@ mod tests {
         assert_eq!(counters.rust_cache_hits, 6);
 
         assert_eq!(analysis.findings, legacy_findings(&root));
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(isolated.base).unwrap();
+    }
+
+    #[test]
+    fn coherently_fabricated_aggregates_miss_and_reproduce_full_scan_findings() {
+        let root = init_multi_scope_repo("fabricated-baseline");
+        let isolated = isolated_caches("fabricated-baseline-caches");
+
+        stage_append(&root, "a/f0.rs", "\n#[cfg(test)]\nmod added_a_tests {}\n");
+        let _ = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes)
+        });
+        coherently_fabricate_scope_entries(&isolated.scope_root);
+
+        // The forged entries carry the current schema, the correct
+        // fingerprint, and internally coherent arithmetic; only the stale
+        // integrity seal can reject them.
+        let (analysis, counters) = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes).unwrap()
+        });
+
+        assert_eq!(counters.baseline_scope_hits, 0);
+        assert_eq!(counters.baseline_scope_computed, 3);
+        let oracle = legacy_findings(&root);
+        assert_eq!(findings_text(&analysis.findings), findings_text(&oracle));
+
+        // Quarantine let the recompute repair every entry, so the warm path
+        // serves sealed aggregates again: one root-scope hit covers the whole
+        // tree, and findings stay identical.
+        let (repaired_analysis, repaired_counters) = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes).unwrap()
+        });
+        assert_eq!(repaired_counters.baseline_scope_hits, 1);
+        assert_eq!(repaired_counters.baseline_scope_computed, 0);
+        assert_eq!(
+            findings_text(&repaired_analysis.findings),
+            findings_text(&oracle)
+        );
 
         fs::remove_dir_all(root).unwrap();
         fs::remove_dir_all(isolated.base).unwrap();

@@ -20,6 +20,24 @@
 //! - missing, corrupt, or version-old cache entries recompute; cache failures
 //!   degrade to fallback and never alter findings.
 //!
+//! Integrity seal: every aggregate entry carries a SHA-256 content digest,
+//! computed with domain separation and length framing over its exact
+//! serialized semantic payload (schema version, scope fingerprint, the
+//! ordered name counts, and the total). Loads recompute and verify the digest
+//! before returning any counts, and independently check the invariant that
+//! the counted names sum to the stored total. A missing, malformed,
+//! mismatched, or old seal is treated as a cache miss; current-schema entries
+//! that fail verification are quarantined (deleted) so the deterministic
+//! recompute can repair them, exactly like structurally broken entries. This
+//! means well-formed but fabricated aggregates — including coherent
+//! count/total fabrications that keep the older schema checks passing — can
+//! no longer alter findings. Boundary: this is an unkeyed digest, not
+//! authentication. It detects accidental corruption and stale or partial
+//! writes; it does not defend a malicious same-user actor who deliberately
+//! recomputes the digest over forged contents, and no HMAC claim is made.
+//! The pre-existing per-file fact cache keeps its own trust model and is
+//! unchanged by this contract.
+//!
 //! Privacy: scope entries persist only aggregated test-module name counts and
 //! a total, plus fingerprint/schema metadata, in the user-local cache
 //! directory already used for per-file Rust facts. No paths, source text, or
@@ -40,9 +58,13 @@ use crate::rust_facts::{
 };
 use crate::test_modules::{SKIPPED_DIRS, TestModuleOccurrence};
 
-const AGGREGATE_SCHEMA_VERSION: u32 = 1;
-const SCOPE_CACHE_NAMESPACE: &str = "test-module-scopes-v1";
+/// Version 2 introduces the integrity seal; version 1 entries carried no
+/// digest and must never be trusted, so both the schema gate and the cache
+/// namespace moved, leaving old entries unreachable.
+const AGGREGATE_SCHEMA_VERSION: u32 = 2;
+const SCOPE_CACHE_NAMESPACE: &str = "test-module-scopes-v2";
 const SCOPE_FINGERPRINT_SCHEME: &[u8] = b"cultist-test-module-scope-v1";
+const SCOPE_SEAL_DOMAIN: &[u8] = b"cultist-test-module-scope-seal-v2";
 
 /// Exact repository-wide test-module precedent used to evaluate changed
 /// declarations. `name_counts` and `total` include the changed occurrences.
@@ -241,12 +263,7 @@ fn scope_fingerprint(node: &ScopeNode, root: &Path) -> String {
     hash_part(&mut hasher, AGGREGATE_SCHEMA_VERSION.to_string().as_bytes());
     hash_part(&mut hasher, &root_coordinate(root));
     hash_part(&mut hasher, &node.fingerprint_material(root));
-    let digest = hasher.finalize();
-    let mut hex = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        hex.push_str(&format!("{byte:02x}"));
-    }
-    hex
+    hex_digest(&hasher.finalize())
 }
 
 impl ScopeNode {
@@ -289,6 +306,36 @@ fn push_framed(material: &mut Vec<u8>, part: &[u8]) {
     material.extend_from_slice(part);
 }
 
+/// The integrity seal: a domain-separated, length-framed SHA-256 digest over
+/// the exact semantic payload of one aggregate entry. `BTreeMap` iteration is
+/// key-sorted, so the encoding is canonical for a given payload.
+fn scope_seal(
+    schema_version: u32,
+    scope_fingerprint: &str,
+    name_counts: &BTreeMap<String, usize>,
+    total: usize,
+) -> String {
+    let mut hasher = Sha256::new();
+    hash_part(&mut hasher, SCOPE_SEAL_DOMAIN);
+    hasher.update(schema_version.to_le_bytes());
+    hash_part(&mut hasher, scope_fingerprint.as_bytes());
+    hasher.update((name_counts.len() as u64).to_le_bytes());
+    for (name, count) in name_counts {
+        hash_part(&mut hasher, name.as_bytes());
+        hasher.update((*count as u64).to_le_bytes());
+    }
+    hasher.update((total as u64).to_le_bytes());
+    hex_digest(&hasher.finalize())
+}
+
+fn hex_digest(digest: &[u8]) -> String {
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    hex
+}
+
 /// Content-addressed store for scope aggregates, mirroring the per-file fact
 /// cache controls (`CARGO_CULTIST_CACHE`, `CARGO_CULTIST_CACHE_DIR`).
 pub(crate) struct ScopeCache {
@@ -301,6 +348,30 @@ struct ScopeEnvelope {
     scope_fingerprint: String,
     name_counts: BTreeMap<String, usize>,
     total: usize,
+    /// Required integrity seal over the exact payload above; entries without
+    /// it fail deserialization and are treated as corrupt.
+    integrity_seal: String,
+}
+
+impl ScopeEnvelope {
+    /// The checked arithmetic invariant: counted names must sum exactly to
+    /// the stored total, with no overflow.
+    fn counts_sum_to_total(&self) -> bool {
+        self.name_counts
+            .values()
+            .try_fold(0usize, |sum, count| sum.checked_add(*count))
+            == Some(self.total)
+    }
+
+    fn seal_matches(&self) -> bool {
+        self.integrity_seal
+            == scope_seal(
+                self.schema_version,
+                &self.scope_fingerprint,
+                &self.name_counts,
+                self.total,
+            )
+    }
 }
 
 impl ScopeCache {
@@ -326,18 +397,28 @@ impl ScopeCache {
         let bytes = fs::read(&path).ok()?;
         let envelope: ScopeEnvelope = match serde_json::from_slice(&bytes) {
             Ok(envelope) => envelope,
+            // Structurally broken data (including a missing seal field) is
+            // quarantined so the next recompute can repair the entry.
             Err(_) => {
                 let _ = fs::remove_file(path);
                 return None;
             }
         };
-        let usable = envelope.schema_version == AGGREGATE_SCHEMA_VERSION
+        let current_schema = envelope.schema_version == AGGREGATE_SCHEMA_VERSION
             && envelope.scope_fingerprint == fingerprint;
-        if usable {
-            Some((envelope.name_counts, envelope.total))
-        } else {
-            None
+        if !current_schema {
+            // Old-schema or foreign-coordinate entries are simply ignored,
+            // matching the historical stale-entry behavior.
+            return None;
         }
+        // A well-formed entry that fails its own integrity verification is
+        // corrupt at the current contract: quarantine it like broken bytes so
+        // the deterministic recompute below can rewrite it.
+        if !envelope.seal_matches() || !envelope.counts_sum_to_total() {
+            let _ = fs::remove_file(path);
+            return None;
+        }
+        Some((envelope.name_counts, envelope.total))
     }
 
     fn store(&self, fingerprint: &str, name_counts: &BTreeMap<String, usize>, total: usize) {
@@ -345,12 +426,14 @@ impl ScopeCache {
         if path.exists() || fs::create_dir_all(&self.root).is_err() {
             return;
         }
-        let Ok(bytes) = serde_json::to_vec(&ScopeEnvelope {
+        let envelope = ScopeEnvelope {
             schema_version: AGGREGATE_SCHEMA_VERSION,
             scope_fingerprint: fingerprint.to_string(),
             name_counts: name_counts.clone(),
             total,
-        }) else {
+            integrity_seal: scope_seal(AGGREGATE_SCHEMA_VERSION, fingerprint, name_counts, total),
+        };
+        let Ok(bytes) = serde_json::to_vec(&envelope) else {
             return;
         };
 
@@ -442,11 +525,37 @@ mod tests {
         );
     }
 
+    fn sealed_envelope(
+        fingerprint: &str,
+        counts: &BTreeMap<String, usize>,
+        total: usize,
+    ) -> ScopeEnvelope {
+        ScopeEnvelope {
+            schema_version: AGGREGATE_SCHEMA_VERSION,
+            scope_fingerprint: fingerprint.to_string(),
+            name_counts: counts.clone(),
+            total,
+            integrity_seal: scope_seal(AGGREGATE_SCHEMA_VERSION, fingerprint, counts, total),
+        }
+    }
+
+    fn write_envelope(cache: &ScopeCache, fingerprint: &str, envelope: &ScopeEnvelope) {
+        fs::write(
+            cache.path_for(fingerprint),
+            serde_json::to_vec(envelope).unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn sample_counts() -> BTreeMap<String, usize> {
+        BTreeMap::from([("tests".to_string(), 3)])
+    }
+
     #[test]
     fn scope_cache_roundtrip_rejects_corrupt_and_foreign_entries() {
         let root = unique_temp_dir("scope-cache");
         let cache = ScopeCache { root: root.clone() };
-        let counts = BTreeMap::from([("tests".to_string(), 3)]);
+        let counts = sample_counts();
         let fingerprint = scope_fingerprint(&scope(&[("lib.rs", "aaa")], &[]), Path::new("/repo"));
         cache.store(&fingerprint, &counts, 3);
         assert_eq!(cache.load(&fingerprint), Some((counts.clone(), 3)));
@@ -458,11 +567,14 @@ mod tests {
         let mut stale: ScopeEnvelope =
             serde_json::from_slice(&fs::read(cache.path_for(&fingerprint)).unwrap()).unwrap();
         stale.schema_version = AGGREGATE_SCHEMA_VERSION.wrapping_sub(1);
-        fs::write(
-            cache.path_for(&fingerprint),
-            serde_json::to_vec(&stale).unwrap(),
-        )
-        .unwrap();
+        // Re-seal so only the schema gate can reject this entry.
+        stale.integrity_seal = scope_seal(
+            stale.schema_version,
+            &stale.scope_fingerprint,
+            &stale.name_counts,
+            stale.total,
+        );
+        write_envelope(&cache, &fingerprint, &stale);
         assert_eq!(cache.load(&fingerprint), None);
 
         cache.store(&fingerprint, &counts, 3);
@@ -470,12 +582,190 @@ mod tests {
             serde_json::from_slice(&fs::read(cache.path_for(&fingerprint)).unwrap()).unwrap();
         foreign.scope_fingerprint =
             scope_fingerprint(&scope(&[("lib.rs", "zzz")], &[]), Path::new("/repo"));
-        fs::write(
-            cache.path_for(&fingerprint),
-            serde_json::to_vec(&foreign).unwrap(),
-        )
-        .unwrap();
+        // Re-seal so only the coordinate gate can reject this entry.
+        foreign.integrity_seal = scope_seal(
+            foreign.schema_version,
+            &foreign.scope_fingerprint,
+            &foreign.name_counts,
+            foreign.total,
+        );
+        write_envelope(&cache, &fingerprint, &foreign);
         assert_eq!(cache.load(&fingerprint), None);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn tampered_payloads_miss_and_are_quarantined_even_when_coherent() {
+        let root = unique_temp_dir("scope-tamper");
+        fs::create_dir_all(&root).unwrap();
+        let cache = ScopeCache { root: root.clone() };
+        let fingerprint = scope_fingerprint(&scope(&[("lib.rs", "aaa")], &[]), Path::new("/repo"));
+        let entry_path = cache.path_for(&fingerprint);
+
+        // Counts mutated under a valid-looking envelope with the old seal.
+        let fabricated_counts = BTreeMap::from([("tests".to_string(), 41)]);
+        let mut tampered = sealed_envelope(&fingerprint, &sample_counts(), 3);
+        tampered.name_counts = fabricated_counts.clone();
+        write_envelope(&cache, &fingerprint, &tampered);
+        assert_eq!(cache.load(&fingerprint), None);
+        assert!(!entry_path.exists(), "tampered entry must be quarantined");
+
+        // Total mutated alone, old seal intact.
+        let mut tampered = sealed_envelope(&fingerprint, &sample_counts(), 3);
+        tampered.total = 99;
+        write_envelope(&cache, &fingerprint, &tampered);
+        assert_eq!(cache.load(&fingerprint), None);
+        assert!(!entry_path.exists());
+
+        // Coherent fabrication: counts and total agree with each other but
+        // the payload was written by someone else; the stale seal must catch it.
+        let mut coherent = sealed_envelope(&fingerprint, &sample_counts(), 3);
+        coherent.name_counts = BTreeMap::from([
+            ("tests".to_string(), 40),
+            ("fabricated_tests".to_string(), 60),
+        ]);
+        coherent.total = 100;
+        write_envelope(&cache, &fingerprint, &coherent);
+        assert_eq!(cache.load(&fingerprint), None);
+        assert!(!entry_path.exists());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_malformed_or_old_seals_never_trust_the_entry() {
+        let root = unique_temp_dir("scope-seal-shapes");
+        fs::create_dir_all(&root).unwrap();
+        let cache = ScopeCache { root: root.clone() };
+        let fingerprint = scope_fingerprint(&scope(&[("lib.rs", "aaa")], &[]), Path::new("/repo"));
+        let entry_path = cache.path_for(&fingerprint);
+        let counts = sample_counts();
+
+        // A version-1-shaped unsealed entry must not deserialize into the
+        // current contract, even if dropped into the new namespace.
+        let legacy = serde_json::json!({
+            "schema_version": 1,
+            "scope_fingerprint": fingerprint,
+            "name_counts": counts,
+            "total": 3,
+        });
+        fs::write(&entry_path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert_eq!(cache.load(&fingerprint), None);
+        assert!(!entry_path.exists(), "unsealed entry must be quarantined");
+
+        // A current-schema entry whose seal field is missing is malformed.
+        let mut unsealed = serde_json::to_value(sealed_envelope(&fingerprint, &counts, 3)).unwrap();
+        unsealed
+            .as_object_mut()
+            .unwrap()
+            .remove("integrity_seal")
+            .unwrap();
+        fs::write(&entry_path, serde_json::to_vec(&unsealed).unwrap()).unwrap();
+        assert_eq!(cache.load(&fingerprint), None);
+        assert!(!entry_path.exists());
+
+        // A garbled seal value is a mismatched digest, not a usable one.
+        let mut garbled = sealed_envelope(&fingerprint, &counts, 3);
+        garbled.integrity_seal = "0".repeat(63) + "z";
+        write_envelope(&cache, &fingerprint, &garbled);
+        assert_eq!(cache.load(&fingerprint), None);
+        assert!(!entry_path.exists());
+
+        // Truncated serialization never loads.
+        let valid = serde_json::to_vec(&sealed_envelope(&fingerprint, &counts, 3)).unwrap();
+        fs::write(&entry_path, &valid[..valid.len() / 2]).unwrap();
+        assert_eq!(cache.load(&fingerprint), None);
+        assert!(!entry_path.exists());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn invariant_violation_misses_even_with_an_honestly_computed_seal() {
+        let root = unique_temp_dir("scope-invariant");
+        fs::create_dir_all(&root).unwrap();
+        let cache = ScopeCache { root: root.clone() };
+        let fingerprint = scope_fingerprint(&scope(&[("lib.rs", "aaa")], &[]), Path::new("/repo"));
+        let counts = BTreeMap::from([("tests".to_string(), 1)]);
+
+        // The seal honestly covers this exact payload, so only the checked
+        // sum invariant can reject it.
+        let inconsistent = ScopeEnvelope {
+            integrity_seal: scope_seal(AGGREGATE_SCHEMA_VERSION, &fingerprint, &counts, 99),
+            schema_version: AGGREGATE_SCHEMA_VERSION,
+            scope_fingerprint: fingerprint.clone(),
+            name_counts: counts,
+            total: 99,
+        };
+        write_envelope(&cache, &fingerprint, &inconsistent);
+        assert_eq!(cache.load(&fingerprint), None);
+        assert!(!cache.path_for(&fingerprint).exists());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn quarantined_entries_are_repaired_by_deterministic_recompute() {
+        let root = unique_temp_dir("scope-repair");
+        fs::create_dir_all(&root).unwrap();
+        let cache = ScopeCache { root: root.clone() };
+        let fingerprint = scope_fingerprint(&scope(&[("lib.rs", "aaa")], &[]), Path::new("/repo"));
+        let counts = sample_counts();
+
+        let mut tampered = sealed_envelope(&fingerprint, &counts, 3);
+        tampered.total += 7;
+        write_envelope(&cache, &fingerprint, &tampered);
+        assert_eq!(cache.load(&fingerprint), None);
+
+        // The recompute path stores again once the corrupt entry is gone.
+        cache.store(&fingerprint, &counts, 3);
+        assert_eq!(
+            cache.load(&fingerprint),
+            Some((counts.clone(), 3)),
+            "the repaired entry must carry a fresh valid seal"
+        );
+
+        // Restoring byte-identical semantics is stable across repairs.
+        let repaired = fs::read(cache.path_for(&fingerprint)).unwrap();
+        let replay = serde_json::to_vec(&sealed_envelope(&fingerprint, &counts, 3)).unwrap();
+        assert_eq!(repaired, replay);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn concurrent_stores_stay_atomic_and_deterministic() {
+        let root = unique_temp_dir("scope-concurrent");
+        let cache = std::sync::Arc::new(ScopeCache { root: root.clone() });
+        let base_node = scope(&[("lib.rs", "aaa")], &[]);
+
+        let handles: Vec<_> = (0..8)
+            .map(|index| {
+                let cache = std::sync::Arc::clone(&cache);
+                let node = ScopeNode {
+                    relative: PathBuf::from(format!("scope-{index}")),
+                    files: base_node.files.clone(),
+                    children: BTreeMap::new(),
+                };
+                std::thread::spawn(move || {
+                    let fingerprint = scope_fingerprint(&node, Path::new("/repo"));
+                    let counts = BTreeMap::from([(format!("tests_{index}"), index + 1)]);
+                    cache.store(&fingerprint, &counts, index + 1);
+                    // Concurrent duplicate writes of one scope stay atomic.
+                    cache.store(&fingerprint, &counts, index + 1);
+                    fingerprint
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            let fingerprint = handle.join().unwrap();
+            let loaded = cache.load(&fingerprint).expect("entry must survive races");
+            let expected_total = loaded.1;
+            let sum: usize = loaded.0.values().sum();
+            assert_eq!(sum, expected_total, "racing writes must stay coherent");
+        }
 
         fs::remove_dir_all(root).unwrap();
     }
