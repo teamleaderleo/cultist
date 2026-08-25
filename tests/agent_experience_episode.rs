@@ -98,7 +98,11 @@ fn palisade_audit_preserves_a_real_review_miss() {
         .unwrap();
 
     assert!(episode.roles.contains(&ExperienceRole::ReviewMiss));
-    assert!(!episode.roles.contains(&ExperienceRole::IntegrationOnlyDefect));
+    assert!(
+        !episode
+            .roles
+            .contains(&ExperienceRole::IntegrationOnlyDefect)
+    );
     assert!(episode.lessons.iter().any(|lesson| {
         lesson.id == "focused-review-proves-unattended-lifecycle"
             && lesson.status == LessonStatus::Rejected
