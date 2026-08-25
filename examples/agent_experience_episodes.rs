@@ -6,9 +6,7 @@ use std::io::{self, Read};
 #[path = "../src/agent_experience_episode.rs"]
 mod agent_experience_episode;
 
-use agent_experience_episode::{
-    MAX_AGENT_EXPERIENCE_BATCH_BYTES, parse_agent_experience_batch,
-};
+use agent_experience_episode::{MAX_AGENT_EXPERIENCE_BATCH_BYTES, parse_agent_experience_batch};
 
 fn main() {
     if let Err(error) = run() {
