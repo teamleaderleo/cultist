@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::performance;
 use crate::rust_facts::{RustFactScan, scan_rust_paths, scan_rust_repository};
 
-const SKIPPED_DIRS: &[&str] = &[".git", "target", "node_modules"];
+pub(crate) const SKIPPED_DIRS: &[&str] = &[".git", "target", "node_modules"];
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TestModuleOccurrence {

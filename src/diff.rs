@@ -10,9 +10,10 @@ use crate::git_stream::{
     self, MAX_DIFF_LINE_BYTES, UnquotedPath, drain_stderr, read_text_line_bounded, terminate_child,
 };
 use crate::performance;
+use crate::rust_facts::FactCache;
+use crate::test_module_aggregate::{ScopeCache, TestModulePrecedent, overlay_precedent_with};
 use crate::test_modules::{
-    TestModuleOccurrence, TestModuleReport, analyze_test_module_files,
-    analyze_test_modules_excluding,
+    TestModuleOccurrence, analyze_test_module_files, analyze_test_modules_excluding,
 };
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -99,6 +100,20 @@ pub fn build_diff_analysis_report(
     root: &Path,
     base: Option<&str>,
 ) -> Result<AnalysisReport, Box<dyn Error>> {
+    build_diff_analysis_report_with_caches(
+        root,
+        base,
+        FactCache::from_environment(),
+        ScopeCache::from_environment(),
+    )
+}
+
+pub(crate) fn build_diff_analysis_report_with_caches(
+    root: &Path,
+    base: Option<&str>,
+    fact_cache: Option<FactCache>,
+    scope_cache: Option<ScopeCache>,
+) -> Result<AnalysisReport, Box<dyn Error>> {
     let changed = git_diff_changed_lines(root, base)?;
 
     let mut analysis = AnalysisReport::new("diff-precedent", root.to_string_lossy().into_owned());
@@ -149,7 +164,17 @@ pub fn build_diff_analysis_report(
         return Ok(analysis);
     }
 
-    if changed_test_modules(root, &changed_report, &changed).is_empty() {
+    let relevant_changed_modules = changed_report
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            occurrence
+                .path
+                .strip_prefix(root)
+                .is_ok_and(|path| changed.contains(path, occurrence.line))
+        })
+        .count();
+    if relevant_changed_modules == 0 {
         analysis.claims.push(Claim::new(
             ClaimKind::Observed,
             "No added or renamed test-gated module declarations were found in the diff.",
@@ -157,37 +182,88 @@ pub fn build_diff_analysis_report(
         return Ok(analysis);
     }
 
-    // A relevant declaration needs repository precedent. Reuse the changed
-    // files we already parsed and scan only the remaining Rust files.
-    let excluded_paths: BTreeSet<_> = changed_rust_paths.into_iter().collect();
+    // A relevant declaration needs repository precedent. Prefer combining
+    // the changed-file facts we already parsed with cached clean baseline
+    // aggregates, so a small diff never walks every remaining fact row. Any
+    // working state outside the overlay's exactness envelope — or any cache
+    // failure — falls back to the deterministic full scan below without
+    // altering findings.
+    let changed_paths: BTreeSet<_> = changed_rust_paths.iter().cloned().collect();
+    match overlay_precedent_with(
+        fact_cache.as_ref(),
+        scope_cache.as_ref(),
+        root,
+        &changed_paths,
+        &changed_report.occurrences,
+    ) {
+        Ok(Some(precedent)) => {
+            add_diff_findings(
+                root,
+                &changed_report.occurrences,
+                &changed,
+                &precedent,
+                &mut analysis,
+            );
+            return Ok(analysis);
+        }
+        // Dirty/staged/untracked/deleted states outside the changed set.
+        Ok(None) => {}
+        // Baseline aggregation is advisory; recompute from live facts.
+        Err(_) => {}
+    }
+
+    let excluded_paths = changed_paths;
     let mut report = analyze_test_modules_excluding(root, &excluded_paths)?;
     report.extend(changed_report);
 
-    add_diff_findings(root, &report, &changed, &mut analysis);
+    let precedent = TestModulePrecedent::from_occurrences(&report.occurrences);
+    add_diff_findings(
+        root,
+        &report.occurrences,
+        &changed,
+        &precedent,
+        &mut analysis,
+    );
     Ok(analysis)
 }
 
 fn add_diff_findings(
     root: &Path,
-    report: &TestModuleReport,
+    candidate_occurrences: &[TestModuleOccurrence],
     changed: &ChangedLines,
+    precedent: &TestModulePrecedent,
     analysis: &mut AnalysisReport,
 ) {
-    let changed_modules = changed_test_modules(root, report, changed);
+    let changed_modules: Vec<&TestModuleOccurrence> = candidate_occurrences
+        .iter()
+        .filter(|occurrence| {
+            occurrence
+                .path
+                .strip_prefix(root)
+                .is_ok_and(|path| changed.contains(path, occurrence.line))
+        })
+        .collect();
 
     for occurrence in changed_modules {
-        let local_names = same_file_names(report, occurrence);
+        let local_names: BTreeSet<String> = candidate_occurrences
+            .iter()
+            .filter(|other| {
+                other.path == occurrence.path
+                    && (other.line != occurrence.line || other.name != occurrence.name)
+            })
+            .map(|other| other.name.clone())
+            .collect();
         let different_local_names: Vec<_> = local_names
             .iter()
             .filter(|name| name.as_str() != occurrence.name)
             .cloned()
             .collect();
-        let precedent_counts = module_name_counts_excluding(report, occurrence);
+        let (precedent_counts, total_without_target) = precedent.excluding(&occurrence.name);
         let repository_count = precedent_counts
             .get(&occurrence.name)
             .copied()
             .unwrap_or_default();
-        let precedent_total = report.occurrences.len().saturating_sub(1);
+        let precedent_total = total_without_target;
         let one_off = repository_count == 0 && precedent_total > 0;
         let tension = precedent_tension(&precedent_counts, &local_names);
 
@@ -506,52 +582,6 @@ fn parse_diff_target(token: &str) -> io::Result<Option<PathBuf>> {
     }
 }
 
-fn changed_test_modules<'a>(
-    root: &Path,
-    report: &'a TestModuleReport,
-    changed: &ChangedLines,
-) -> Vec<&'a TestModuleOccurrence> {
-    report
-        .occurrences
-        .iter()
-        .filter(|occurrence| {
-            occurrence
-                .path
-                .strip_prefix(root)
-                .is_ok_and(|path| changed.contains(path, occurrence.line))
-        })
-        .collect()
-}
-
-fn module_name_counts_excluding(
-    report: &TestModuleReport,
-    target: &TestModuleOccurrence,
-) -> BTreeMap<String, usize> {
-    let mut counts = BTreeMap::new();
-    for occurrence in &report.occurrences {
-        if occurrence.path == target.path
-            && occurrence.line == target.line
-            && occurrence.name == target.name
-        {
-            continue;
-        }
-        *counts.entry(occurrence.name.clone()).or_default() += 1;
-    }
-    counts
-}
-
-fn same_file_names(report: &TestModuleReport, target: &TestModuleOccurrence) -> BTreeSet<String> {
-    report
-        .occurrences
-        .iter()
-        .filter(|occurrence| {
-            occurrence.path == target.path
-                && (occurrence.line != target.line || occurrence.name != target.name)
-        })
-        .map(|occurrence| occurrence.name.clone())
-        .collect()
-}
-
 fn repository_dominant_name(counts: &BTreeMap<String, usize>) -> Option<&str> {
     let dominant_count = counts.values().copied().max()?;
     let mut dominant = counts
@@ -639,6 +669,369 @@ mod tests {
         root
     }
 
+    // ---- diff-time baseline aggregate fixtures ---------------------------
+
+    struct IsolatedCaches {
+        fact_root: PathBuf,
+        scope_root: PathBuf,
+        base: PathBuf,
+    }
+
+    fn isolated_caches(name: &str) -> IsolatedCaches {
+        let base = unique_temp_dir(name);
+        let isolated = IsolatedCaches {
+            fact_root: base.join("facts"),
+            scope_root: base.join("scopes"),
+            base,
+        };
+        fs::create_dir_all(&isolated.fact_root).unwrap();
+        fs::create_dir_all(&isolated.scope_root).unwrap();
+        isolated
+    }
+
+    fn caches_for(isolated: &IsolatedCaches) -> (Option<FactCache>, Option<ScopeCache>) {
+        (
+            Some(FactCache {
+                root: isolated.fact_root.clone(),
+            }),
+            Some(ScopeCache {
+                root: isolated.scope_root.clone(),
+            }),
+        )
+    }
+
+    /// Seven-file repository with two directory scopes plus a root scope.
+    fn init_multi_scope_repo(name: &str) -> PathBuf {
+        let root = unique_temp_dir(name);
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::create_dir_all(root.join("b")).unwrap();
+        fs::write(root.join("README.md"), "baseline\n").unwrap();
+        fs::write(root.join("r.rs"), "#[cfg(test)]\nmod r_tests {}\n").unwrap();
+        for (dir, prefix, count) in [("a", "f", 3), ("b", "g", 3)] {
+            for index in 0..count {
+                let module = format!("{dir}_{prefix}{index}_tests");
+                fs::write(
+                    root.join(dir).join(format!("{prefix}{index}.rs")),
+                    format!("#[cfg(test)]\nmod {module} {{}}\n"),
+                )
+                .unwrap();
+            }
+        }
+        run_git(&root, &["init", "-q"]);
+        run_git(&root, &["config", "user.email", "cultist@example.invalid"]);
+        run_git(&root, &["config", "user.name", "Cargo Cultist Tests"]);
+        run_git(&root, &["add", "."]);
+        run_git(&root, &["commit", "-q", "-m", "baseline"]);
+        root
+    }
+
+    fn stage_append(root: &Path, relative: &str, addition: &str) {
+        let path = root.join(relative);
+        let mut current = fs::read_to_string(&path).unwrap();
+        current.push_str(addition);
+        fs::write(&path, current).unwrap();
+        run_git(root, &["add", relative]);
+    }
+
+    /// The deterministic pre-change behavior: scan everything except the
+    /// changed paths, then extend with the changed-file facts.
+    fn legacy_findings(root: &Path) -> Vec<Finding> {
+        let mut analysis =
+            AnalysisReport::new("diff-precedent", root.to_string_lossy().into_owned());
+        let changed = git_diff_changed_lines(root, None).unwrap();
+        let changed_rust_paths: Vec<_> = changed.rust_paths().map(|path| root.join(path)).collect();
+        assert!(
+            !changed_rust_paths.is_empty(),
+            "scenario must change Rust files"
+        );
+        let changed_report = analyze_test_module_files(&changed_rust_paths).unwrap();
+        assert!(changed_report.parse_failures.is_empty());
+        let excluded_paths: BTreeSet<_> = changed_rust_paths.into_iter().collect();
+        let mut report = analyze_test_modules_excluding(root, &excluded_paths).unwrap();
+        report.extend(changed_report);
+        let precedent = TestModulePrecedent::from_occurrences(&report.occurrences);
+        add_diff_findings(
+            root,
+            &report.occurrences,
+            &changed,
+            &precedent,
+            &mut analysis,
+        );
+        analysis.findings
+    }
+
+    fn findings_text(findings: &[Finding]) -> String {
+        findings
+            .iter()
+            .map(|finding| serde_json::to_string(finding).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn corrupt_scope_entries(scope_root: &Path) {
+        for entry in fs::read_dir(scope_root).unwrap().flatten() {
+            if entry.path().extension().and_then(|ext| ext.to_str()) == Some("json") {
+                fs::write(entry.path(), b"corrupted bytes").unwrap();
+            }
+        }
+    }
+
+    fn age_scope_entries(scope_root: &Path) {
+        for entry in fs::read_dir(scope_root).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let mut envelope: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            envelope["schema_version"] = serde_json::Value::from(0);
+            fs::write(&path, serde_json::to_vec(&envelope).unwrap()).unwrap();
+        }
+    }
+
+    /// Forges an aggregate payload that passes every pre-seal check: current
+    /// schema, matching fingerprint, and internally coherent count/total
+    /// arithmetic — while keeping the original integrity seal.
+    fn coherently_fabricate_scope_entries(scope_root: &Path) {
+        for entry in fs::read_dir(scope_root).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let mut envelope: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            {
+                let counts = envelope
+                    .get_mut("name_counts")
+                    .and_then(|value| value.as_object_mut())
+                    .expect("aggregate entry must carry name_counts");
+                counts.insert(
+                    "fabricated_tests".to_string(),
+                    serde_json::Value::from(1_000),
+                );
+            }
+            let object = envelope.as_object_mut().unwrap();
+            let total = object
+                .get("total")
+                .and_then(|value| value.as_u64())
+                .unwrap_or_default();
+            object.insert("total".to_string(), serde_json::Value::from(total + 1_000));
+            fs::write(&path, serde_json::to_vec(&envelope).unwrap()).unwrap();
+        }
+    }
+
+    #[test]
+    fn warm_small_diff_matches_full_scan_and_scales_with_affected_scope() {
+        let root = init_multi_scope_repo("warm-small-diff");
+        let isolated = isolated_caches("warm-small-diff-caches");
+
+        stage_append(&root, "a/f0.rs", "\n#[cfg(test)]\nmod added_a_tests {}\n");
+        let (_, cold) = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes).unwrap()
+        });
+        // The staged edit makes `a/f0.rs` volatile, so it is parsed fresh as
+        // changed-file facts and never joins the clean scope tree: seven
+        // parses cover the changed file plus the six remaining clean rows.
+        assert_eq!(cold.rust_files_parsed, 7);
+        assert_eq!(cold.rust_cache_hits, 0);
+        assert_eq!(cold.baseline_scope_hits, 0);
+        assert_eq!(cold.baseline_scope_computed, 3);
+
+        stage_append(&root, "b/g1.rs", "\n#[cfg(test)]\nmod added_b_tests {}\n");
+        let (warm_analysis, warm) = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes).unwrap()
+        });
+
+        // Both staged files are reparsed as changed-file facts; everything
+        // else comes from caches: the sibling `a` scope is served whole and
+        // only the affected `b` scope plus the root fold recompute, so work
+        // scales with the affected scope instead of the repository rows.
+        assert_eq!(warm.rust_files_parsed, 2);
+        assert_eq!(warm.rust_cache_hits, 3);
+        assert_eq!(warm.baseline_scope_hits, 1);
+        assert_eq!(warm.baseline_scope_computed, 2);
+
+        let oracle = legacy_findings(&root);
+        assert_eq!(warm_analysis.findings.len(), 2);
+        assert_eq!(warm_analysis.findings, oracle);
+
+        let text = findings_text(&warm_analysis.findings);
+        assert!(text.contains("`added_b_tests` appears 0 time(s)"));
+        assert!(text.contains("`added_a_tests` appears 0 time(s)"));
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(isolated.base).unwrap();
+    }
+
+    #[test]
+    fn corrupt_baseline_cache_recomputes_without_altering_findings() {
+        let root = init_multi_scope_repo("corrupt-baseline");
+        let isolated = isolated_caches("corrupt-baseline-caches");
+
+        stage_append(&root, "a/f0.rs", "\n#[cfg(test)]\nmod added_a_tests {}\n");
+        let _ = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes)
+        });
+        corrupt_scope_entries(&isolated.scope_root);
+
+        let (analysis, counters) = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes).unwrap()
+        });
+
+        assert_eq!(counters.baseline_scope_hits, 0);
+        assert_eq!(counters.baseline_scope_computed, 3);
+        // Fact-layer reuse survives: corruption costs re-aggregation, not reparsing.
+        // The clean tree holds six rows (the staged file stays volatile).
+        assert_eq!(counters.rust_files_parsed, 1);
+        assert_eq!(counters.rust_cache_hits, 6);
+
+        assert_eq!(analysis.findings, legacy_findings(&root));
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(isolated.base).unwrap();
+    }
+
+    #[test]
+    fn coherently_fabricated_aggregates_miss_and_reproduce_full_scan_findings() {
+        let root = init_multi_scope_repo("fabricated-baseline");
+        let isolated = isolated_caches("fabricated-baseline-caches");
+
+        stage_append(&root, "a/f0.rs", "\n#[cfg(test)]\nmod added_a_tests {}\n");
+        let _ = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes)
+        });
+        coherently_fabricate_scope_entries(&isolated.scope_root);
+
+        // The forged entries carry the current schema, the correct
+        // fingerprint, and internally coherent arithmetic; only the stale
+        // integrity seal can reject them.
+        let (analysis, counters) = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes).unwrap()
+        });
+
+        assert_eq!(counters.baseline_scope_hits, 0);
+        assert_eq!(counters.baseline_scope_computed, 3);
+        let oracle = legacy_findings(&root);
+        assert_eq!(findings_text(&analysis.findings), findings_text(&oracle));
+
+        // Quarantine let the recompute repair every entry, so the warm path
+        // serves sealed aggregates again: one root-scope hit covers the whole
+        // tree, and findings stay identical.
+        let (repaired_analysis, repaired_counters) = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes).unwrap()
+        });
+        assert_eq!(repaired_counters.baseline_scope_hits, 1);
+        assert_eq!(repaired_counters.baseline_scope_computed, 0);
+        assert_eq!(
+            findings_text(&repaired_analysis.findings),
+            findings_text(&oracle)
+        );
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(isolated.base).unwrap();
+    }
+
+    #[test]
+    fn version_old_baseline_cache_is_ignored_and_recomputed() {
+        let root = init_multi_scope_repo("stale-baseline-schema");
+        let isolated = isolated_caches("stale-baseline-caches");
+
+        stage_append(&root, "a/f0.rs", "\n#[cfg(test)]\nmod added_a_tests {}\n");
+        let _ = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes)
+        });
+        age_scope_entries(&isolated.scope_root);
+
+        let (analysis, counters) = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes).unwrap()
+        });
+
+        assert_eq!(counters.baseline_scope_hits, 0);
+        assert_eq!(counters.baseline_scope_computed, 3);
+        assert_eq!(analysis.findings, legacy_findings(&root));
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(isolated.base).unwrap();
+    }
+
+    #[test]
+    fn untracked_file_outside_diff_forces_exact_fallback() {
+        let root = init_multi_scope_repo("untracked-fallback");
+        let isolated = isolated_caches("untracked-fallback-caches");
+
+        stage_append(&root, "a/f0.rs", "\n#[cfg(test)]\nmod added_a_tests {}\n");
+        // Untracked files never appear in `git diff HEAD`, so this row sits
+        // outside the changed set and must invalidate the overlay instead of
+        // being dropped from the precedent counts.
+        fs::write(
+            root.join("scratch.rs"),
+            "#[cfg(test)]\nmod scratch_tests {}\n#[cfg(test)]\nmod added_a_tests {}\n",
+        )
+        .unwrap();
+
+        let (analysis, counters) = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes).unwrap()
+        });
+
+        assert_eq!(counters.baseline_scope_hits, 0);
+        assert_eq!(counters.baseline_scope_computed, 0);
+        assert_eq!(analysis.findings, legacy_findings(&root));
+
+        let text = findings_text(&analysis.findings);
+        assert!(
+            text.contains("`added_a_tests` appears 1 time(s)"),
+            "the untracked contribution must be counted exactly: {text}"
+        );
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(isolated.base).unwrap();
+    }
+
+    #[test]
+    fn deleted_file_updates_precedent_counts() {
+        let root = init_multi_scope_repo("deleted-scope");
+        let isolated = isolated_caches("deleted-scope-caches");
+        fs::create_dir_all(root.join("x")).unwrap();
+        fs::write(
+            root.join("x/only.rs"),
+            "#[cfg(test)]\nmod target_tests {}\n",
+        )
+        .unwrap();
+        run_git(&root, &["add", "x/only.rs"]);
+        run_git(&root, &["commit", "-q", "-m", "add target"]);
+
+        fs::remove_file(root.join("x/only.rs")).unwrap();
+        stage_append(&root, "a/f0.rs", "\n#[cfg(test)]\nmod target_tests {}\n");
+
+        let (analysis, counters) = performance::capture(|| {
+            let (facts, scopes) = caches_for(&isolated);
+            build_diff_analysis_report_with_caches(&root, None, facts, scopes).unwrap()
+        });
+
+        assert_eq!(counters.baseline_scope_hits, 0);
+        assert_eq!(counters.baseline_scope_computed, 3);
+        assert_eq!(analysis.findings, legacy_findings(&root));
+
+        let text = findings_text(&analysis.findings);
+        assert!(
+            text.contains("`target_tests` appears 0 time(s)"),
+            "the deleted file's declaration must leave the counts: {text}"
+        );
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(isolated.base).unwrap();
+    }
+
     #[test]
     fn detects_scope_tension_only_with_clear_precedent() {
         let counts = BTreeMap::from([("tests".to_string(), 33), ("unit_tests".to_string(), 88)]);
@@ -664,21 +1057,42 @@ mod tests {
             path: root.join("src/lib.rs"),
             line: 40,
         };
-        let report = TestModuleReport {
-            occurrences: vec![
-                TestModuleOccurrence {
-                    name: "tests".to_string(),
-                    path: root.join("src/lib.rs"),
-                    line: 20,
-                },
-                changed.clone(),
-            ],
-            parse_failures: Vec::new(),
-        };
+        let occurrences = vec![
+            TestModuleOccurrence {
+                name: "tests".to_string(),
+                path: root.join("src/lib.rs"),
+                line: 20,
+            },
+            changed.clone(),
+        ];
 
-        let counts = module_name_counts_excluding(&report, &changed);
+        let precedent = TestModulePrecedent::from_occurrences(&occurrences);
+        let (counts, total) = precedent.excluding("unit_tests");
         assert_eq!(counts.get("tests"), Some(&1));
         assert_eq!(counts.get("unit_tests"), None);
+        assert_eq!(total, 1);
+    }
+
+    #[test]
+    fn precedent_excluding_keeps_same_name_occurrences_elsewhere() {
+        let root = Path::new("/repo");
+        let occurrences = vec![
+            TestModuleOccurrence {
+                name: "shared".to_string(),
+                path: root.join("src/a.rs"),
+                line: 10,
+            },
+            TestModuleOccurrence {
+                name: "shared".to_string(),
+                path: root.join("src/b.rs"),
+                line: 20,
+            },
+        ];
+        let precedent = TestModulePrecedent::from_occurrences(&occurrences);
+
+        let (counts, total) = precedent.excluding("shared");
+        assert_eq!(counts.get("shared"), Some(&1));
+        assert_eq!(total, 1);
     }
 
     #[test]
@@ -724,25 +1138,30 @@ mod tests {
     #[test]
     fn selects_test_modules_whose_declaration_line_was_added() {
         let root = Path::new("/repo");
-        let report = TestModuleReport {
-            occurrences: vec![
-                TestModuleOccurrence {
-                    name: "tests".to_string(),
-                    path: root.join("src/lib.rs"),
-                    line: 20,
-                },
-                TestModuleOccurrence {
-                    name: "special_tests".to_string(),
-                    path: root.join("src/lib.rs"),
-                    line: 40,
-                },
-            ],
-            parse_failures: Vec::new(),
-        };
+        let occurrences = [
+            TestModuleOccurrence {
+                name: "tests".to_string(),
+                path: root.join("src/lib.rs"),
+                line: 20,
+            },
+            TestModuleOccurrence {
+                name: "special_tests".to_string(),
+                path: root.join("src/lib.rs"),
+                line: 40,
+            },
+        ];
         let mut changed = ChangedLines::default();
         changed.insert(Path::new("src/lib.rs"), 40);
 
-        let selected = changed_test_modules(root, &report, &changed);
+        let selected: Vec<_> = occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence
+                    .path
+                    .strip_prefix(root)
+                    .is_ok_and(|path| changed.contains(path, occurrence.line))
+            })
+            .collect();
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].name, "special_tests");
     }
