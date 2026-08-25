@@ -16,7 +16,7 @@ const CORPUS: &[u8] =
 #[test]
 fn retained_dogfood_corpus_preserves_distinct_experience_roles() {
     let batch = parse_agent_experience_batch(CORPUS).unwrap();
-    assert_eq!(batch.episodes.len(), 8);
+    assert_eq!(batch.episodes.len(), 9);
 
     let roles = batch
         .episodes
@@ -66,7 +66,7 @@ fn required_command_episode_preserves_exact_cost_and_promoted_check() {
 }
 
 #[test]
-fn integration_episode_keeps_review_and_integration_defect_classes_separate() {
+fn integration_episode_stays_distinct_from_review_miss() {
     let batch = parse_agent_experience_batch(CORPUS).unwrap();
     let episode = batch
         .episodes
@@ -75,16 +75,38 @@ fn integration_episode_keeps_review_and_integration_defect_classes_separate() {
         .unwrap();
 
     assert!(episode.roles.contains(&ExperienceRole::EnvironmentDefect));
-    assert!(episode.roles.contains(&ExperienceRole::ReviewMiss));
     assert!(
         episode
             .roles
             .contains(&ExperienceRole::IntegrationOnlyDefect)
     );
+    assert!(!episode.roles.contains(&ExperienceRole::ReviewMiss));
     assert_eq!(episode.cost.as_ref().unwrap().repair_turns, Some(1));
     assert!(episode.discriminators.iter().any(|discriminator| {
         discriminator.id == "local-typecheck-unavailable"
             && discriminator.kind == DiscriminatorKind::Applicability
+    }));
+}
+
+#[test]
+fn palisade_audit_preserves_a_real_review_miss() {
+    let batch = parse_agent_experience_batch(CORPUS).unwrap();
+    let episode = batch
+        .episodes
+        .iter()
+        .find(|episode| episode.id == "stensibly/pr1661-palisade-review-miss")
+        .unwrap();
+
+    assert!(episode.roles.contains(&ExperienceRole::ReviewMiss));
+    assert!(!episode.roles.contains(&ExperienceRole::IntegrationOnlyDefect));
+    assert!(episode.lessons.iter().any(|lesson| {
+        lesson.id == "focused-review-proves-unattended-lifecycle"
+            && lesson.status == LessonStatus::Rejected
+    }));
+    assert!(episode.discriminators.iter().any(|discriminator| {
+        discriminator.id == "palisade-defects-found"
+            && discriminator.kind == DiscriminatorKind::Outcome
+            && discriminator.value == "4"
     }));
 }
 
