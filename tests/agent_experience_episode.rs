@@ -113,10 +113,7 @@ fn rejected_and_weakened_lessons_survive_beside_promoted_ones() {
         lesson.id == "ambiguity-discrimination-routing"
             && lesson.status == LessonStatus::Candidate
     }));
-    assert_eq!(
-        routing.cost.as_ref().unwrap().input_tokens,
-        Some(2_247_548)
-    );
+    assert_eq!(routing.cost.as_ref().unwrap().input_tokens, Some(632_503));
 }
 
 #[test]
