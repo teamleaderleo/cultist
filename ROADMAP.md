@@ -276,7 +276,7 @@ Work should be proportional to the evidence actually needed. Cheap irrelevant pa
 - #16 — dogfood/evaluation corpus
 - #41 — Stensibly agentic organizational-history corpus
 - #137 — behavioral A/B and interruption outcomes
-- SmolRunner replay research
+- Glaeda replay research over the pinned SmolRunner-era corpus
 
 Evaluation should include positive controls, quiet negatives, false assumptions, failed proofs, duplicate lanes, second-order regressions, and whether surfaced evidence actually changed behavior.
 
