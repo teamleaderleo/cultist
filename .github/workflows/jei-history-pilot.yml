@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  smolrunner-same-target-positive:
+  glaeda-historical-same-target-positive:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Cultist
@@ -38,7 +38,7 @@ jobs:
       - name: Build agent context packet research example
         run: cargo build --release --example agent_context_packet --manifest-path cultist/Cargo.toml
 
-      - name: Checkout pinned SmolRunner state
+      - name: Checkout pinned Glaeda historical corpus
         uses: actions/checkout@v4
         with:
           repository: ${{ steps.target.outputs.repository }}
@@ -197,7 +197,7 @@ jobs:
   summarize:
     if: always()
     needs:
-      - smolrunner-same-target-positive
+      - glaeda-historical-same-target-positive
       - stensibly-cross-file-negative
     runs-on: ubuntu-latest
     steps:
@@ -221,7 +221,7 @@ jobs:
           from pathlib import Path
 
           paths = [
-              ("Positive · SmolRunner same-target history", Path("receipts/positive/smolrunner-same-target-positive.json")),
+              ("Positive · Glaeda historical corpus · same-target history", Path("receipts/positive/smolrunner-same-target-positive.json")),
               ("Negative · Stensibly cross-file history", Path("receipts/negative/stensibly-cross-file-negative.json")),
           ]
           overall = True
