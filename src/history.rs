@@ -778,6 +778,10 @@ mod tests {
         run_git(&root, &["init", "-q"]);
         run_git(&root, &["config", "user.email", "cultist@example.invalid"]);
         run_git(&root, &["config", "user.name", "Cargo Cultist Tests"]);
+        // This fixture creates enough loose objects to trigger detached Git
+        // auto-maintenance on some CI runners. Keep cleanup deterministic: the
+        // fixture tests Cultist's streaming/accounting, not Git's GC policy.
+        run_git(&root, &["config", "gc.auto", "0"]);
 
         fs::write(root.join("anchor.rs"), "fn anchor() {}\n").unwrap();
         run_git(&root, &["add", "."]);
