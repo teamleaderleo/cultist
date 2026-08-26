@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
+use crate::compact_ir::MAX_C1_BYTES;
+
 const ALIAS_HEADER: &str = "C1A";
 const CANONICAL_HEADER: &str = "C1";
 
@@ -179,6 +181,11 @@ pub fn expand_c1_aliases(input: &str) -> Result<String, AliasError> {
             "input must begin with `C1` or the research `C1A` header",
         ));
     }
+    if input.len() > MAX_C1_BYTES {
+        return Err(AliasError::new(format!(
+            "C1A input exceeds the {MAX_C1_BYTES}-byte transport limit"
+        )));
+    }
 
     let mut offset = "C1A\n".len();
     let mut aliases = BTreeMap::<usize, String>::new();
@@ -319,6 +326,23 @@ fn json_string_spans(input: &str) -> Result<Vec<(usize, usize)>, AliasError> {
     Ok(spans)
 }
 
+fn checked_expanded_len(current: usize, additional: usize) -> Result<usize, AliasError> {
+    current
+        .checked_add(additional)
+        .ok_or_else(|| AliasError::new("expanded canonical C1 byte count overflow"))
+}
+
+fn append_bounded(output: &mut String, value: &str) -> Result<(), AliasError> {
+    let next_len = checked_expanded_len(output.len(), value.len())?;
+    if next_len > MAX_C1_BYTES {
+        return Err(AliasError::new(format!(
+            "expanded canonical C1 exceeds the {MAX_C1_BYTES}-byte transport limit"
+        )));
+    }
+    output.push_str(value);
+    Ok(())
+}
+
 fn expand_body(body: &str, aliases: &BTreeMap<usize, String>) -> Result<String, AliasError> {
     if !body.starts_with("C1\n") {
         return Err(AliasError::new(
@@ -358,7 +382,7 @@ fn expand_body(body: &str, aliases: &BTreeMap<usize, String>) -> Result<String, 
             continue;
         }
 
-        output.push_str(&body[cursor..index]);
+        append_bounded(&mut output, &body[cursor..index])?;
         let token_start = index;
         index += 1;
         let digits_start = index;
@@ -377,7 +401,7 @@ fn expand_body(body: &str, aliases: &BTreeMap<usize, String>) -> Result<String, 
         let raw_literal = aliases
             .get(&id)
             .ok_or_else(|| AliasError::new(format!("unknown alias reference `@{id}`")))?;
-        output.push_str(raw_literal);
+        append_bounded(&mut output, raw_literal)?;
         cursor = index;
     }
 
@@ -385,6 +409,16 @@ fn expand_body(body: &str, aliases: &BTreeMap<usize, String>) -> Result<String, 
         return Err(AliasError::new("unterminated JSON string in alias body"));
     }
 
-    output.push_str(&body[cursor..]);
+    append_bounded(&mut output, &body[cursor..])?;
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expanded_length_arithmetic_fails_closed_on_overflow() {
+        assert!(checked_expanded_len(usize::MAX, 1).is_err());
+    }
 }
