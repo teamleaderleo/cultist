@@ -46,6 +46,7 @@ pub fn analyze_test_module_files(paths: &[PathBuf]) -> Result<TestModuleReport, 
 
 fn test_module_report(scan: RustFactScan) -> TestModuleReport {
     performance::record_rust_scan(scan.parsed_files, scan.cache_hits);
+    performance::record_rust_prefiltered(scan.prefiltered_files);
     let mut report = TestModuleReport::default();
 
     for file in scan.files {
@@ -158,17 +159,38 @@ mod tests {
     }
 
     #[test]
-    fn repository_scan_budget_counts_git_and_parsed_files() {
+    fn targeted_malformed_file_still_surfaces_parse_failure() {
+        let root = unique_temp_dir("targeted-malformed");
+        fs::create_dir_all(&root).unwrap();
+        let malformed = root.join("malformed.rs");
+        fs::write(&malformed, "this is deliberately invalid Rust {{{").unwrap();
+
+        let (report, counters) = performance::capture(|| {
+            analyze_test_module_files(std::slice::from_ref(&malformed)).unwrap()
+        });
+
+        assert_eq!(report.parse_failures.len(), 1);
+        assert_eq!(report.parse_failures[0].0, malformed);
+        assert_eq!(counters.rust_files_parsed, 1);
+        assert_eq!(counters.rust_files_prefiltered, 0);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn repository_scan_budget_counts_git_parsed_and_prefiltered_files() {
         let root = unique_temp_dir("repository-scan-budget");
         fs::create_dir_all(root.join("src")).unwrap();
         run_git(&root, &["init", "-q"]);
         fs::write(root.join("src/lib.rs"), "#[cfg(test)]\nmod tests {}\n").unwrap();
+        fs::write(root.join("src/value.rs"), "pub const VALUE: usize = 42;\n").unwrap();
 
         let (report, counters) = performance::capture(|| analyze_test_modules(&root).unwrap());
 
         assert_eq!(report.occurrences.len(), 1);
         assert_eq!(counters.git_subprocesses, 4);
         assert_eq!(counters.rust_files_parsed, 1);
+        assert_eq!(counters.rust_files_prefiltered, 1);
         assert_eq!(counters.rust_cache_hits, 0);
 
         fs::remove_dir_all(root).unwrap();
