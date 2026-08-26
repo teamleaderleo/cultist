@@ -42,7 +42,7 @@ const CURRENT_REPOSITORY: &str = "owner/repo";
 struct TempRepo(PathBuf);
 
 impl TempRepo {
-    fn new() -> Self {
+    fn new(default_branch: &str) -> Self {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -52,7 +52,19 @@ impl TempRepo {
             std::process::id()
         ));
         fs::create_dir_all(root.join("src")).unwrap();
-        git(&root, &["init", "-q"]);
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .arg("-c")
+            .arg(format!("init.defaultBranch={default_branch}"))
+            .args(["init", "-q"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         git(&root, &["config", "user.email", "cultist@example.invalid"]);
         git(&root, &["config", "user.name", "Cultist Test"]);
         Self(root)
@@ -123,8 +135,8 @@ fn collect(repo: &TempRepo, subject: &RustEditClassSubject) -> RustEditClassSour
     collect_rust_edit_class_source(&repo.0, CURRENT_REPOSITORY, subject).unwrap()
 }
 
-fn seeded() -> (TempRepo, String, String, String) {
-    let repo = TempRepo::new();
+fn seeded(default_branch: &str) -> (TempRepo, String, String, String) {
+    let repo = TempRepo::new(default_branch);
     repo.write("fn answer() -> usize { 41 }\n");
     let root = repo.commit("root");
     repo.write("fn answer() -> usize { 42 }\n");
@@ -134,9 +146,10 @@ fn seeded() -> (TempRepo, String, String, String) {
     (repo, root, syntax, comments)
 }
 
-#[test]
-fn focused_source_values_and_focus_admission_survive_current_main() {
-    let (repo, root, syntax, comments) = seeded();
+fn assert_focused_source_values_and_focus_admission(default_branch: &str) {
+    let (repo, root, syntax, comments) = seeded(default_branch);
+    let initial_branch = git_text(&repo.0, &["symbolic-ref", "--short", "HEAD"]);
+    assert_eq!(initial_branch, default_branch);
 
     git(&repo.0, &["checkout", "-q", &syntax]);
     let syntax_result = collect(&repo, &subject(&syntax));
@@ -167,7 +180,7 @@ fn focused_source_values_and_focus_admission_survive_current_main() {
         DiscriminatorValueState::Unknown { .. }
     ));
 
-    git(&repo.0, &["checkout", "-q", "master"]);
+    git(&repo.0, &["checkout", "-q", &initial_branch]);
     let unrelated = repo.commit_unrelated();
     let unrelated_result = collect(&repo, &subject(&unrelated));
     assert!(matches!(
@@ -177,8 +190,15 @@ fn focused_source_values_and_focus_admission_survive_current_main() {
 }
 
 #[test]
+fn focused_source_values_and_focus_admission_survive_current_main() {
+    for default_branch in ["main", "master"] {
+        assert_focused_source_values_and_focus_admission(default_branch);
+    }
+}
+
+#[test]
 fn source_bridge_uses_v2_consumption_applicability_and_closes_missing_frontier() {
-    let (repo, _root, _syntax, comments) = seeded();
+    let (repo, _root, _syntax, comments) = seeded("main");
     let source = collect(&repo, &subject(&comments));
     let required_subject = source.observation.subject_ref.clone();
     let missing = observation_frontier::ObservationFrontierReceipt {
@@ -240,7 +260,7 @@ fn source_bridge_uses_v2_consumption_applicability_and_closes_missing_frontier()
 
 #[test]
 fn repository_and_head_movement_are_independent_applicability_axes() {
-    let (repo, _root, syntax, comments) = seeded();
+    let (repo, _root, syntax, comments) = seeded("main");
 
     let wrong_repository =
         collect_rust_edit_class_source(&repo.0, "owner/other", &subject(&comments)).unwrap();
@@ -273,7 +293,7 @@ fn repository_and_head_movement_are_independent_applicability_axes() {
 
 #[test]
 fn bad_source_and_subject_coordinates_fail_closed() {
-    let (repo, _root, _syntax, comments) = seeded();
+    let (repo, _root, _syntax, comments) = seeded("main");
 
     assert!(collect_rust_edit_class_source(&repo.0, " owner/repo", &subject(&comments)).is_err());
 
