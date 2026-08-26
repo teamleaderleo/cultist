@@ -19,7 +19,7 @@ jobs:
         with:
           path: cultist
 
-      - name: Resolve SmolRunner control
+      - name: Resolve Glaeda historical control
         id: smol
         run: |
           python cultist/scripts/external_dogfood_case.py \
@@ -49,7 +49,7 @@ jobs:
           cargo build --release --example agent_context_packet --manifest-path cultist/Cargo.toml
           cargo build --release --example scoped_agent_context_packet --manifest-path cultist/Cargo.toml
 
-      - name: Checkout pinned SmolRunner state
+      - name: Checkout pinned Glaeda historical corpus
         uses: actions/checkout@v4
         with:
           repository: ${{ steps.smol.outputs.repository }}
@@ -58,7 +58,7 @@ jobs:
           persist-credentials: false
           path: target-smolrunner
 
-      - name: Measure SmolRunner parent scope
+      - name: Measure Glaeda historical parent scope
         env:
           TARGET_FILE: ${{ steps.smol.outputs.history_file }}
           TARGET_REPOSITORY: ${{ steps.smol.outputs.repository }}
@@ -121,7 +121,7 @@ jobs:
           from pathlib import Path
 
           cases = [
-              ("SmolRunner · file-local already sufficient", Path("artifacts/smolrunner-parent-scope.json")),
+              ("Glaeda historical corpus · file-local already sufficient", Path("artifacts/smolrunner-parent-scope.json")),
               ("Stensibly · parent adds missing lessons", Path("artifacts/stensibly-parent-scope.json")),
           ]
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as out:

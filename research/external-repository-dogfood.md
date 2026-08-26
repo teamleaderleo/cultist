@@ -110,9 +110,11 @@ Registered replay cases use exact 40-hex revisions. PR and issue numbers remain 
 
 The registry is intentionally small metadata. Adding fifty historical questions should add roughly fifty descriptors, not fifty default CI jobs or fifty repository clones.
 
-## First external carrier: SmolRunner
+## First external carrier: Glaeda historical corpus
 
-Issue #62 already established a useful pinned SmolRunner history replay at:
+Glaeda is the current product name. This section keeps SmolRunner where the pinned repository/corpus identity belongs to the historical evidence.
+
+Issue #62 already established a useful pinned history replay from Glaeda's SmolRunner-era corpus at:
 
 ```text
 teamleaderleo/smolrunner@ed3b70e375a57eabce26f2311f798f75b33bdeb0
@@ -123,7 +125,7 @@ That target is a good first carrier because it has known earned-history discrimi
 
 ### Executed receipt
 
-PR #129 ran the temporary carrier against that exact SmolRunner coordinate:
+PR #129 ran the temporary carrier against that exact SmolRunner-era coordinate:
 
 ```text
 workflow run: 32240366281
@@ -297,7 +299,7 @@ The useful Fieldwork corpus spans issues, investigations, notes, bug-species syn
 
 The current registry starts with:
 
-- SmolRunner for earned local history and agent-context work;
+- Glaeda, using the pinned SmolRunner-era corpus for earned local history and agent-context work;
 - Cloud Hypervisor for repository-vs-file precedent tension;
 - Stensibly for longitudinal agentic churn and handoff/recovery questions;
 - Linux Fieldwork for bug-species and research-memory controls.
