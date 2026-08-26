@@ -164,3 +164,32 @@ fn alias_expansion_is_strict_and_only_resolves_tokens_outside_json_strings() {
     assert!(expand_c1_aliases("C1A\nA1 \"x\"\nC1\nR[1,@x,\"r\"]\n").is_err());
     assert!(expand_c1_aliases("C1A\nA1 nope\nC1\nR[1,@1,\"r\"]\n").is_err());
 }
+
+#[test]
+fn alias_expansion_enforces_encoded_and_canonical_byte_limits() {
+    const RAW_LITERAL: &str = "\"0123456789\"";
+
+    let available = compact_ir::MAX_C1_BYTES - "C1\n".len();
+    let repeats = available / RAW_LITERAL.len();
+    let remainder = available % RAW_LITERAL.len();
+    let body = format!(
+        "C1\n{}{}",
+        "@1".repeat(repeats),
+        "x".repeat(remainder)
+    );
+    let packet = format!("C1A\nA1 {RAW_LITERAL}\n{body}");
+    assert!(packet.len() < compact_ir::MAX_C1_BYTES);
+
+    let expanded = expand_c1_aliases(&packet).unwrap();
+    assert_eq!(expanded.len(), compact_ir::MAX_C1_BYTES);
+
+    let oversized_body = format!("{body}@1");
+    let oversized_packet = format!("C1A\nA1 {RAW_LITERAL}\n{oversized_body}");
+    assert!(oversized_packet.len() < compact_ir::MAX_C1_BYTES);
+    let error = expand_c1_aliases(&oversized_packet).unwrap_err().to_string();
+    assert!(error.contains("expanded canonical C1 exceeds"));
+
+    let oversized_input = format!("C1A\n{}", "x".repeat(compact_ir::MAX_C1_BYTES));
+    let error = expand_c1_aliases(&oversized_input).unwrap_err().to_string();
+    assert!(error.contains("C1A input exceeds"));
+}
