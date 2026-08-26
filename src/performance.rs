@@ -20,6 +20,7 @@ pub struct PerfCounters {
     pub wall_time_us: u64,
     pub git_subprocesses: usize,
     pub rust_files_parsed: usize,
+    pub rust_files_prefiltered: usize,
     pub rust_cache_hits: usize,
     pub baseline_scope_hits: usize,
     pub baseline_scope_computed: usize,
@@ -50,6 +51,14 @@ pub fn record_rust_scan(parsed: usize, cache_hits: usize) {
         if let Some(state) = state.borrow_mut().as_mut() {
             state.counters.rust_files_parsed += parsed;
             state.counters.rust_cache_hits += cache_hits;
+        }
+    });
+}
+
+pub fn record_rust_prefiltered(prefiltered: usize) {
+    STATE.with(|state| {
+        if let Some(state) = state.borrow_mut().as_mut() {
+            state.counters.rust_files_prefiltered += prefiltered;
         }
     });
 }
@@ -110,6 +119,7 @@ mod tests {
     fn disabled_counters_are_inert() {
         record_git_subprocess();
         record_rust_scan(3, 4);
+        record_rust_prefiltered(5);
         assert_eq!(finish(), None);
     }
 
@@ -119,9 +129,11 @@ mod tests {
             record_git_subprocess();
             record_git_subprocess();
             record_rust_scan(3, 7);
+            record_rust_prefiltered(5);
         });
         assert_eq!(counters.git_subprocesses, 2);
         assert_eq!(counters.rust_files_parsed, 3);
+        assert_eq!(counters.rust_files_prefiltered, 5);
         assert_eq!(counters.rust_cache_hits, 7);
     }
 }
