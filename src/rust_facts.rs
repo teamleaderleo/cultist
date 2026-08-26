@@ -44,6 +44,7 @@ pub struct RustFactScan {
     pub files: Vec<RustFactFile>,
     pub cache_hits: usize,
     pub parsed_files: usize,
+    pub prefiltered_files: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -88,7 +89,7 @@ pub fn scan_rust_repository(
 ) -> Result<RustFactScan, Box<dyn Error>> {
     let inputs = rust_inputs(root, excluded_paths, skipped_dirs)?;
     let cache = FactCache::from_environment();
-    scan_inputs(&inputs, cache.as_ref())
+    scan_repository_inputs(&inputs, cache.as_ref())
 }
 
 pub fn scan_rust_paths(paths: &[PathBuf]) -> Result<RustFactScan, Box<dyn Error>> {
@@ -105,9 +106,24 @@ pub fn scan_rust_paths(paths: &[PathBuf]) -> Result<RustFactScan, Box<dyn Error>
     scan_inputs(&inputs, None)
 }
 
+fn scan_repository_inputs(
+    inputs: &[RustInput],
+    cache: Option<&FactCache>,
+) -> Result<RustFactScan, Box<dyn Error>> {
+    scan_inputs_inner(inputs, cache, true)
+}
+
 fn scan_inputs(
     inputs: &[RustInput],
     cache: Option<&FactCache>,
+) -> Result<RustFactScan, Box<dyn Error>> {
+    scan_inputs_inner(inputs, cache, false)
+}
+
+fn scan_inputs_inner(
+    inputs: &[RustInput],
+    cache: Option<&FactCache>,
+    prefilter_repository_inputs: bool,
 ) -> Result<RustFactScan, Box<dyn Error>> {
     let mut scan = RustFactScan::default();
 
@@ -118,8 +134,39 @@ fn scan_inputs(
             .and_then(|content_id| cache.and_then(|cache| cache.load(content_id)));
 
         let facts = if let Some(facts) = cached {
-            scan.cache_hits += 1;
-            facts
+            if prefilter_repository_inputs && facts.parse_error.is_some() {
+                let source = fs::read_to_string(&input.path)?;
+                if source_might_contain_shared_facts(&source) {
+                    scan.cache_hits += 1;
+                    facts
+                } else {
+                    // Old v1 cache entries may contain parse errors for files
+                    // whose bytes prove they cannot contribute the current
+                    // shared fact families. Ignore that history-dependent
+                    // receipt so warm and cold repository scans agree.
+                    scan.prefiltered_files += 1;
+                    RustFileFacts::default()
+                }
+            } else {
+                scan.cache_hits += 1;
+                facts
+            }
+        } else if prefilter_repository_inputs {
+            let source = fs::read_to_string(&input.path)?;
+            if source_might_contain_shared_facts(&source) {
+                scan.parsed_files += 1;
+                let facts = extract_rust_source(&source);
+                if let (Some(cache), Some(content_id)) = (cache, input.content_id.as_deref()) {
+                    cache.store(content_id, &facts);
+                }
+                facts
+            } else {
+                // Keep prefiltered negatives out of the shared syntax cache.
+                // That cache remains an exact receipt of full extraction and
+                // can continue serving consumers that explicitly request it.
+                scan.prefiltered_files += 1;
+                RustFileFacts::default()
+            }
         } else {
             scan.parsed_files += 1;
             let facts = extract_rust_file(&input.path)?;
@@ -142,6 +189,15 @@ fn scan_inputs(
 fn extract_rust_file(path: &Path) -> Result<RustFileFacts, Box<dyn Error>> {
     let source = fs::read_to_string(path)?;
     Ok(extract_rust_source(&source))
+}
+
+fn source_might_contain_shared_facts(source: &str) -> bool {
+    // Raw substring checks intentionally favor false positives. Every module
+    // fact requires the Rust `mod` keyword. Every explicit #[test] function
+    // requires both `test` and `fn`. Comments, strings, longer identifiers,
+    // and nested cfg syntax may therefore trigger a full parse; they never
+    // cause a candidate source to be skipped.
+    source.contains("mod") || (source.contains("test") && source.contains("fn"))
 }
 
 fn extract_rust_source(source: &str) -> RustFileFacts {
@@ -572,6 +628,91 @@ mod tests {
         assert!(facts.module_names.contains(&"support".to_string()));
         assert!(facts.module_names.contains(&"tests".to_string()));
         assert_eq!(facts.parse_error, None);
+    }
+
+    #[test]
+    fn raw_prefilter_favors_false_positives_for_current_fact_families() {
+        assert!(!source_might_contain_shared_facts(
+            "pub const VALUE: usize = 42;"
+        ));
+        assert!(source_might_contain_shared_facts(
+            "#[cfg(all(unix, test))] mod unix_tests {}"
+        ));
+        assert!(source_might_contain_shared_facts(
+            "const EXAMPLE: &str = \"mod fake {}\";"
+        ));
+        assert!(source_might_contain_shared_facts(
+            "const EXAMPLE: &str = \"#[test] fn fake_test() {}\";"
+        ));
+    }
+
+    #[test]
+    fn repository_prefilter_skips_only_byte_proven_irrelevant_sources() {
+        let root = init_repo("rust-fact-prefilter");
+        fs::write(
+            root.join("src/relevant.rs"),
+            "#[cfg(all(unix, test))]\nmod unix_tests {}\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("src/comment_candidate.rs"),
+            "// mod fake {}\npub const EXAMPLE: &str = \"fn fake_test() {}\";\n",
+        )
+        .unwrap();
+        fs::write(root.join("src/value.rs"), "pub const VALUE: usize = 42;\n").unwrap();
+
+        let inputs = rust_inputs(&root, &BTreeSet::new(), &[".git", "target"]).unwrap();
+        let scan = scan_repository_inputs(&inputs, None).unwrap();
+
+        assert_eq!(scan.parsed_files, 2);
+        assert_eq!(scan.prefiltered_files, 1);
+        assert_eq!(scan.cache_hits, 0);
+        assert_eq!(scan.files.len(), 3);
+        let relevant = scan
+            .files
+            .iter()
+            .find(|file| file.path.ends_with("src/relevant.rs"))
+            .unwrap();
+        assert_eq!(relevant.facts.test_modules[0].name, "unix_tests");
+        let comment_candidate = scan
+            .files
+            .iter()
+            .find(|file| file.path.ends_with("src/comment_candidate.rs"))
+            .unwrap();
+        assert!(comment_candidate.facts.test_modules.is_empty());
+        assert!(comment_candidate.facts.explicit_tests.is_empty());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn repository_prefilter_ignores_old_irrelevant_parse_error_cache_receipt() {
+        let root = init_repo("rust-fact-prefilter-cache");
+        let cache = FactCache {
+            root: root.join("cache"),
+        };
+        let source = root.join("src/lib.rs");
+        fs::write(&source, "this is deliberately invalid Rust {{{\n").unwrap();
+        run_git(&root, &["add", "."]);
+        run_git(&root, &["commit", "-q", "-m", "baseline"]);
+
+        let inputs = rust_inputs(&root, &BTreeSet::new(), &[".git", "target"]).unwrap();
+        let content_id = inputs[0].content_id.as_deref().unwrap();
+        cache.store(
+            content_id,
+            &RustFileFacts {
+                parse_error: Some("historical parse error".to_string()),
+                ..RustFileFacts::default()
+            },
+        );
+
+        let scan = scan_repository_inputs(&inputs, Some(&cache)).unwrap();
+        assert_eq!(scan.cache_hits, 0);
+        assert_eq!(scan.parsed_files, 0);
+        assert_eq!(scan.prefiltered_files, 1);
+        assert_eq!(scan.files[0].facts, RustFileFacts::default());
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
