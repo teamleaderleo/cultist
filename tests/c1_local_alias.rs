@@ -172,11 +172,7 @@ fn alias_expansion_enforces_encoded_and_canonical_byte_limits() {
     let available = compact_ir::MAX_C1_BYTES - "C1\n".len();
     let repeats = available / RAW_LITERAL.len();
     let remainder = available % RAW_LITERAL.len();
-    let body = format!(
-        "C1\n{}{}",
-        "@1".repeat(repeats),
-        "x".repeat(remainder)
-    );
+    let body = format!("C1\n{}{}", "@1".repeat(repeats), "x".repeat(remainder));
     let packet = format!("C1A\nA1 {RAW_LITERAL}\n{body}");
     assert!(packet.len() < compact_ir::MAX_C1_BYTES);
 
@@ -186,7 +182,9 @@ fn alias_expansion_enforces_encoded_and_canonical_byte_limits() {
     let oversized_body = format!("{body}@1");
     let oversized_packet = format!("C1A\nA1 {RAW_LITERAL}\n{oversized_body}");
     assert!(oversized_packet.len() < compact_ir::MAX_C1_BYTES);
-    let error = expand_c1_aliases(&oversized_packet).unwrap_err().to_string();
+    let error = expand_c1_aliases(&oversized_packet)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("expanded canonical C1 exceeds"));
 
     let oversized_input = format!("C1A\n{}", "x".repeat(compact_ir::MAX_C1_BYTES));
