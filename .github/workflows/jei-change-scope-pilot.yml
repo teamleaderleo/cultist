@@ -26,8 +26,8 @@ jobs:
 
       - name: Build file-local and scoped packet examples
         run: |
-          cargo build --release --example agent_context_packet --manifest-path cultist/Cargo.toml
-          cargo build --release --example scoped_agent_context_packet --manifest-path cultist/Cargo.toml
+          cargo build --locked --release --example agent_context_packet --manifest-path cultist/Cargo.toml
+          cargo build --locked --release --example scoped_agent_context_packet --manifest-path cultist/Cargo.toml
 
       - name: Checkout Stensibly #1573 base
         uses: actions/checkout@v4

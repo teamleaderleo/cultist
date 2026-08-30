@@ -130,7 +130,7 @@ jobs:
 
       - name: Validate through independent Rust evaluator
         run: |
-          cargo run --quiet --example review_memory \
+          cargo run --locked --quiet --example review_memory \
             < review-memory-query.json \
             > review-memory-evaluation.json
 

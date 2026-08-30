@@ -22,7 +22,7 @@ jobs:
       - name: Format
         run: cargo fmt --check
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: Project-memory lineage controls
         run: |
           python -m py_compile \
@@ -93,19 +93,19 @@ jobs:
           CURRENT_PR: ${{ github.event.pull_request.number }}
         run: python scripts/active_work_heads_up_snapshot_ci.py
       - name: Test
-        run: cargo test
+        run: cargo test --locked
       - name: Dogfood repository scan
-        run: cargo run -- .
+        run: cargo run --locked -- .
       - name: Dogfood repository JSON
-        run: cargo run --quiet -- --format json . | python -m json.tool >/dev/null
+        run: cargo run --locked --quiet -- --format json . | python -m json.tool >/dev/null
       - name: Dogfood history companions
-        run: cargo run -- history --max-commits 20 src/main.rs
+        run: cargo run --locked -- history --max-commits 20 src/main.rs
       - name: Dogfood history JSON
-        run: cargo run --quiet -- history --max-commits 20 --format json src/main.rs | python -m json.tool >/dev/null
+        run: cargo run --locked --quiet -- history --max-commits 20 --format json src/main.rs | python -m json.tool >/dev/null
       - name: Dogfood CI test-filter inventory
-        run: cargo run -- ci-tests .
+        run: cargo run --locked -- ci-tests .
       - name: Dogfood CI test-filter JSON
-        run: cargo run --quiet -- ci-tests --format json . | python -m json.tool >/dev/null
+        run: cargo run --locked --quiet -- ci-tests --format json . | python -m json.tool >/dev/null
       - name: Exercise CI test-filter positive and control fixtures
         run: |
           set -euo pipefail
@@ -132,7 +132,7 @@ jobs:
                 - run: cargo test --lib stale_filter
           EOF
 
-          cargo run --quiet -- ci-tests --format json "$fixture" > /tmp/cultist-ci-test-stale.json
+          cargo run --locked --quiet -- ci-tests --format json "$fixture" > /tmp/cultist-ci-test-stale.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -149,7 +149,7 @@ jobs:
           PY
 
           sed -i 's/stale_filter/existing_test/' "$fixture/.github/workflows/test.yml"
-          cargo run --quiet -- ci-tests --format json "$fixture" > /tmp/cultist-ci-test-control.json
+          cargo run --locked --quiet -- ci-tests --format json "$fixture" > /tmp/cultist-ci-test-control.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -161,14 +161,14 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           CULTIST_BASE: ${{ github.event.pull_request.base.sha }}
-        run: cargo run -- diff --base "$CULTIST_BASE" .
+        run: cargo run --locked -- diff --base "$CULTIST_BASE" .
       - name: Dogfood pull request JSON
         if: github.event_name == 'pull_request'
         env:
           CULTIST_BASE: ${{ github.event.pull_request.base.sha }}
-        run: cargo run --quiet -- diff --base "$CULTIST_BASE" --format json . | python -m json.tool >/dev/null
+        run: cargo run --locked --quiet -- diff --base "$CULTIST_BASE" --format json . | python -m json.tool >/dev/null
       - name: Dogfood push diff
         if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
         env:
           CULTIST_BASE: ${{ github.event.before }}
-        run: cargo run -- diff --base "$CULTIST_BASE" .
+        run: cargo run --locked -- diff --base "$CULTIST_BASE" .

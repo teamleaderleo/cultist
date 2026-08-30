@@ -29,7 +29,7 @@ jobs:
           rustup default stable
 
       - name: Build scoped packet example
-        run: cargo build --release --example scoped_agent_context_packet --manifest-path cultist/Cargo.toml
+        run: cargo build --locked --release --example scoped_agent_context_packet --manifest-path cultist/Cargo.toml
 
       - name: Checkout exact pre-guard Stensibly state
         uses: actions/checkout@v4

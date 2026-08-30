@@ -45,9 +45,9 @@ jobs:
 
       - name: Build packet and blind-pair examples
         run: |
-          cargo build --release --example agent_context_packet --manifest-path cultist/Cargo.toml
-          cargo build --release --example scoped_agent_context_packet --manifest-path cultist/Cargo.toml
-          cargo build --release --example capability_demand_pair_prepare --manifest-path cultist/Cargo.toml
+          cargo build --locked --release --example agent_context_packet --manifest-path cultist/Cargo.toml
+          cargo build --locked --release --example scoped_agent_context_packet --manifest-path cultist/Cargo.toml
+          cargo build --locked --release --example capability_demand_pair_prepare --manifest-path cultist/Cargo.toml
 
       - name: Checkout exact pre-guard Stensibly state
         uses: actions/checkout@v4

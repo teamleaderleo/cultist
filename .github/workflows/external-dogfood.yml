@@ -104,7 +104,7 @@ jobs:
           rustup default stable
 
       - name: Build Cultist
-        run: cargo build --release --manifest-path cultist/Cargo.toml
+        run: cargo build --locked --release --manifest-path cultist/Cargo.toml
 
       - name: Checkout target repository
         uses: actions/checkout@v4
