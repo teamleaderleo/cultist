@@ -77,7 +77,7 @@ jobs:
 
       - name: Validate through independent Rust evaluator
         run: |
-          cargo run --quiet --example closure_episode \
+          cargo run --locked --quiet --example closure_episode \
             < closure-episode.json \
             > closure-episode-evaluation.json
 

@@ -121,7 +121,7 @@ jobs:
 
       - name: Validate with offline packet reader
         run: |
-          cargo run --quiet --example project_memory_packet \
+          cargo run --locked --quiet --example project_memory_packet \
             < project-memory-lineage.json \
             > project-memory-lineage-summary.json
 

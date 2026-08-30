@@ -25,7 +25,7 @@ jobs:
           rustup default stable
 
       - name: Build behavioral packet materializer
-        run: cargo build --release --example behavioral_trial_materialize
+        run: cargo build --locked --release --example behavioral_trial_materialize
 
       - name: Materialize and verify blind packets
         run: |

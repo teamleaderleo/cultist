@@ -39,7 +39,7 @@ jobs:
 
       - name: Build independent readers
         run: |
-          cargo build --release \
+          cargo build --locked --release \
             --example refinement_observation_requirements \
             --example observation_frontiers \
             --example observation_probe_plan \

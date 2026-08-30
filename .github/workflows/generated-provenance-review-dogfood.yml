@@ -21,7 +21,7 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
       - name: Build canonical ownership research view
-        run: cargo build --example rust_generator_ownership
+        run: cargo build --locked --example rust_generator_ownership
       - name: Reject derived subdirectory promoted to repository root
         run: |
           set -euo pipefail

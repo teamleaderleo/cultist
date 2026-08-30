@@ -82,7 +82,7 @@ jobs:
 
       - name: Validate with offline document reader
         run: |
-          cargo run --quiet --example project_document_packet \
+          cargo run --locked --quiet --example project_document_packet \
             < project-document.json \
             > project-document-summary.json
 
