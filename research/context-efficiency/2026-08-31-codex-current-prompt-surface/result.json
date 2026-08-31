@@ -52,6 +52,20 @@
     "same_exact_output": true,
     "output": "OK"
   },
+  "explicit_skill_provider_replay": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "xhigh",
+    "skill": "lazy-commander",
+    "control_input_tokens": 43062,
+    "treatment_input_tokens": 30759,
+    "input_token_delta": -12303,
+    "input_token_reduction_percent": 28.570,
+    "control_command_executions": 2,
+    "treatment_command_executions": 2,
+    "both_commands_referenced_skill_and_skill_md": true,
+    "same_structured_observation": true,
+    "effective_progressive_disclosure": true
+  },
   "quiet_results": [
     "The behavioral action did not change in any of three current pairs.",
     "The provider input-token delta varied; an exact 698-token claim is rejected.",
@@ -68,7 +82,8 @@
     "surface_matrix": "2297fee23eee2056c4292bcc32b74ead3af8982c23978076e80206c48cbf88e1",
     "behavioral_aggregate": "86c0c8b6345f8c596aef10d683378f31dbe94cfdaedda059c8faf548f042490e",
     "baseline_packet_token_report": "ecf19c15ea5900e22fed8816b0417d2eeb0f472a958e8fb9d7ca671bcdbfd3c7",
-    "current_closed_task_provider_receipt": "1f2bd6581f10eabd7cefa8d4772b179dfec8ce7b29a02c0ffe34b6c4848fd23e"
+    "current_closed_task_provider_receipt": "1f2bd6581f10eabd7cefa8d4772b179dfec8ce7b29a02c0ffe34b6c4848fd23e",
+    "explicit_skill_provider_receipt": "9a17cb685e8cb45a2cf50ad52b952ea94fd0b37f543dae56a45106cb5f892fd7"
   },
   "raw_content_emitted": false
 }
