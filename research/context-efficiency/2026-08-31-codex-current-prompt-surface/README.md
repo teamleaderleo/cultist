@@ -38,6 +38,15 @@ output. The run used the Codex client's built-in default model under
 does not invent a model name. This microtask validates the real request-envelope
 saving, not broad engineering capability preservation.
 
+The explicit-skill gate also passed on a live `gpt-5.6-sol:xhigh` run. Both the
+ordinary and catalogue-muted arms issued two command executions referencing the
+named `lazy-commander` skill and `SKILL.md`, read the file, and returned the same
+structured observation with the exact `# Lazy Commander` heading. Muting the eager
+catalogue reduced provider-reported input from 43,062 to 30,759 tokens (-12,303;
+28.6%). This establishes progressive disclosure for this named installed skill on
+the pinned client/machine path; it does not establish every skill or broad plugin/app
+retirement.
+
 Three fresh behavioral replays with only the skills catalogue muted preserved the
 same first justified action. Provider input-token savings were -698, -698, and -490,
 so the useful conclusion is a non-zero saving with a retained first-action null—not
@@ -64,3 +73,5 @@ tool schemas, or other server-side overhead. A debug renderer probe using a lite
 `$lazy-commander` did not expose the skill body after catalogue suppression. That is
 a retained negative result for the probe method, not evidence that real runtime
 explicit-skill invocation works or fails.
+The live command-event replay supersedes that method limitation for the one pinned
+`lazy-commander` case while retaining the renderer null as evidence about the probe.
