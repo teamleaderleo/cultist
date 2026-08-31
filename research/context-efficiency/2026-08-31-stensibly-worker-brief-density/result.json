@@ -1,0 +1,42 @@
+{
+  "schema": "cultist-stensibly-worker-brief-density/v1",
+  "recordedAt": "2026-08-31",
+  "tokenizer": {
+    "implementation": "tiktoken 0.14.0",
+    "encoding": "o200k_base"
+  },
+  "fixture": "issue-1616",
+  "presentations": {
+    "explicit": { "tokens": 1000 },
+    "terseBeforeDeduplication": { "tokens": 653, "reductionPercent": 34.7 },
+    "terse": { "tokens": 608, "reductionPercent": 39.2 },
+    "terseLazyPolicy": { "tokens": 397, "reductionPercent": 60.3 }
+  },
+  "provider": {
+    "codexVersion": "codex-cli 0.151.0",
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "low",
+    "promptSurfaceProfile": "closed-task",
+    "policyIrrelevant": {
+      "sameStructuredOutput": true,
+      "eagerInputTokens": 11378,
+      "pointerInputTokens": 11195,
+      "inputTokenDelta": -183,
+      "eagerCommandExecutions": 0,
+      "pointerCommandExecutions": 0
+    },
+    "policyRequired": {
+      "sameStructuredOutput": true,
+      "eagerInputTokens": 11436,
+      "pointerInputTokens": 24027,
+      "inputTokenDelta": 12591,
+      "eagerCommandExecutions": 0,
+      "pointerCommandExecutions": 1,
+      "pointerReadPolicySource": true
+    }
+  },
+  "privateProviderReceiptSha256": "f9d4f5b34021b05b79c118723fcaf5af648a0e71c7c7f646f6bf768db7eba89e",
+  "rawContentEmitted": false,
+  "authorizesAutomaticPolicyDeferral": false,
+  "authorizesGlobalDefaultChange": false
+}
