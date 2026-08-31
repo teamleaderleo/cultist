@@ -1,0 +1,74 @@
+{
+  "schema": "cultist-codex-current-prompt-surface-result/v1",
+  "recorded_at": "2026-08-31",
+  "codex_version": "codex-cli 0.151.0",
+  "machine_class": "big-red-linux-x86_64",
+  "tokenizer": {
+    "implementation": "tiktoken 0.14.0",
+    "encoding": "o200k_base",
+    "counts_text_segments_only": true,
+    "counts_protocol_overhead": false
+  },
+  "current_prompt_surface": {
+    "prompt_sha256": "b4447319393924de48e7ee762507a4701409c060961acaeeb3902db46c6c7acf",
+    "default_text_tokens": 4152,
+    "segments": [
+      { "label": "skills-catalogue", "tokens": 1655, "characters": 7025 },
+      { "label": "permissions", "tokens": 68, "characters": 362 },
+      { "label": "apps-instructions", "tokens": 146, "characters": 646 },
+      { "label": "plugins-instructions", "tokens": 209, "characters": 1014 },
+      { "label": "team-orchestration", "tokens": 498, "characters": 2264 },
+      { "label": "multi-agent-mode", "tokens": 52, "characters": 271 },
+      { "label": "recommended-plugins", "tokens": 1389, "characters": 3387 },
+      { "label": "environment-context", "tokens": 132, "characters": 455 },
+      { "label": "user-prompt", "tokens": 3, "characters": 10 }
+    ]
+  },
+  "profiles": [
+    { "name": "default", "text_tokens": 4152, "delta": 0, "reduction_percent": 0.0 },
+    { "name": "skills-muted", "text_tokens": 2497, "delta": -1655, "reduction_percent": 39.86 },
+    { "name": "plugins-off", "text_tokens": 1598, "delta": -2554, "reduction_percent": 61.513 },
+    { "name": "apps-off", "text_tokens": 2617, "delta": -1535, "reduction_percent": 36.97 },
+    { "name": "skills-plugins-off", "text_tokens": 899, "delta": -3253, "reduction_percent": 78.348 },
+    { "name": "skills-apps-off", "text_tokens": 962, "delta": -3190, "reduction_percent": 76.83 },
+    { "name": "multi-agent-off", "text_tokens": 4152, "delta": 0, "reduction_percent": 0.0 },
+    { "name": "all-off", "text_tokens": 753, "delta": -3399, "reduction_percent": 81.864 }
+  ],
+  "behavioral_replay": {
+    "pair_count": 3,
+    "same_first_action_count": 3,
+    "quiet_null_count": 3,
+    "input_token_deltas": [-698, -698, -490],
+    "mean_input_token_delta": -628.6666666666666,
+    "exact_delta_stable": false
+  },
+  "current_closed_task_provider_replay": {
+    "model": "client-default-unresolved",
+    "reasoning_effort": "low",
+    "control_input_tokens": 19471,
+    "treatment_input_tokens": 10712,
+    "input_token_delta": -8759,
+    "input_token_reduction_percent": 44.985,
+    "same_exact_output": true,
+    "output": "OK"
+  },
+  "quiet_results": [
+    "The behavioral action did not change in any of three current pairs.",
+    "The provider input-token delta varied; an exact 698-token claim is rejected.",
+    "features.multi_agent=false did not remove the host-injected team-orchestration or multi-agent-mode prompt segments.",
+    "A literal $lazy-commander prompt under catalogue suppression did not make debug prompt-input expose the skill body; this renderer probe does not prove or disprove runtime explicit-skill capability."
+  ],
+  "authority": {
+    "broad_profiles_retire_capabilities": true,
+    "authorizes_global_default_change": false,
+    "authorizes_capability_retirement": false,
+    "authorizes_production_promotion": false
+  },
+  "private_evidence_sha256": {
+    "surface_matrix": "2297fee23eee2056c4292bcc32b74ead3af8982c23978076e80206c48cbf88e1",
+    "behavioral_aggregate": "86c0c8b6345f8c596aef10d683378f31dbe94cfdaedda059c8faf548f042490e",
+    "baseline_packet_token_report": "ecf19c15ea5900e22fed8816b0417d2eeb0f472a958e8fb9d7ca671bcdbfd3c7",
+    "current_closed_task_provider_receipt": "1f2bd6581f10eabd7cefa8d4772b179dfec8ce7b29a02c0ffe34b6c4848fd23e"
+  },
+  "raw_content_emitted": false
+}
