@@ -38,7 +38,7 @@ Repositories under `teamleaderleo/*` are first-party coordination surfaces for t
 Before an automated worker creates or edits an issue, pull request, comment, review, inline review comment, or discussion that mentions third-party GitHub work, run the scanner against the **exact text that will be written**:
 
 ```sh
-python scripts/external_github_reference_guard.py \
+python3 scripts/external_github_reference_guard.py \
   --repository teamleaderleo/cultist \
   --stdin < proposed-body.md
 ```
