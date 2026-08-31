@@ -69,7 +69,15 @@ The full instantiated behavior map is retained privately at `~/.local/state/big-
 | Codex | 4 | 6,851,640 | 6,426,368 | 425,272 | 119,293 | 97,297 | 141 |
 | Pi | 4 | 3,093,189 | 2,813,440 | 279,749 | 111,997 | 95,160 | 107 |
 
-**OBSERVED:** Independent agreement found real pre-merge defects in the model-accounting and repeated-prefix patches, selected Pi's Phase 4 delivery with explicit reservations, and blocked the unsafe kill protocol. Pi used 54.9% less total and 34.2% less uncached input across the review wave. Raw event streams were far too verbose for commander ingestion, especially Pi token-update JSONL; only deterministic bounded projections should enter hot context. Fleet receipt SHA-256: `781220672f6a78e01f78af532c7c3117da38e350adb1d06aa797fa58144ae8a9`.
+**OBSERVED:** Independent agreement found real pre-merge defects in the model-accounting and repeated-prefix patches, selected Pi's Phase 4 delivery with explicit reservations, and blocked the unsafe kill protocol. Pi used 54.9% less total and 34.2% less uncached input across the review wave. Raw event streams were far too verbose for commander ingestion, especially Pi token-update JSONL; only deterministic bounded projections should enter hot context. Fleet evidence SHA-256 after preserving the later timeout receipts: `34fc0e929a0a2e4ce8b13549ccae06dfc188dfb230ecf1dff5d16326a73fd34c`.
+
+### First operational Pi worker use
+
+**PROVEN:** Codex used Pi as an internal worker—not a benchmark arm—to make a bounded 24-line Leo Workspace documentation edit through six typed tools with no generic shell. Attempt 1 completed in 83.385 seconds using 57,595 input (41,472 cached), 3,972 output, and 2,990 reasoning tokens. Its edit and focused tests were correct, but linked-worktree Git metadata was not mounted inside bubblewrap, so `git diff --check` failed and Pi truthfully returned `partial`.
+
+**PROVEN:** Codex restarted Pi through the runner's intended session path with the same session ID, added only the missing read-only main-checkout `.git` mount, and asked it to continue. Attempt 2 completed in 11.085 seconds using 24,313 input (22,528 cached), 231 output, and 118 reasoning tokens; `git diff --check` passed and Pi returned `complete`. No conversation, failed approach, edit, or next action was reconstructed by hand. Host-side review then passed all 14 focused tests and the diff check before merge.
+
+**PROVEN:** The canonical runner subsequently completed a separate read-only self-review with no edits and provider-visible usage of 36,429 input (30,208 cached), 4,944 output, and 3,944 reasoning tokens. The compact review projection carries only backend/state, paths, usage, result status, verification count, and blocker. It deliberately marks textual worker verification claims `ambiguous` until the commander checks real evidence; stdout, stderr, transcript, and summary prose remain cold.
 
 ## What belongs where
 
@@ -91,9 +99,10 @@ The intended boundary is:
 ## Preserved negative results and unknowns
 
 - **UNKNOWN:** At minute 60–75, whether either harness retains failed approaches and evidence identity better. Both physical arms completed before minute 23.
-- **UNKNOWN:** Intended same-session restart fidelity. The proposed kill controller failed admission review because it did not enforce a clean frozen base, exact successful landmark, empty process group, or original/resumed session lineage. The treatment was canceled, not passed.
+- **UNKNOWN:** Matched forced-kill recovery fidelity. The proposed kill controller failed admission review because it did not enforce a clean frozen base, exact successful landmark, empty process group, or original/resumed session lineage. The treatment was canceled, not passed. The ordinary Pi process restart above proves intended same-session continuation after a correctable environment failure, not forced-kill equivalence.
 - **PROVEN:** A first Pi retry failed before provider contact because it pointed at an empty isolated profile. The valid run used the admitted OAuth state.
 - **PROVEN:** A first long Codex controller buffered provider output until normal exit and lost it on interruption; incremental durable capture was subsequently added.
+- **OBSERVED:** Three later broad Codex/Luna implementation workers hit their 30-minute timeout after producing work, but their settlement-only receipts retained `codex.tokenUsage: null`. Killed ephemeral Codex CLI turns therefore remain usage-accounting blind unless provider usage is captured incrementally.
 - **OBSERVED:** The first Pi-backend implementation dispatch was rejected by Stensibly before launch because `bun` was missing from the worker's minimal effective PATH. The harness failed closed and the retry used the exact installed executable path. The operator mistakenly reused the same run directory for the retry, whose lifecycle clearing removed the first receipt; preserve this as a fleet-controller defect, not as a durable-receipt claim.
 
 ## Consequence
