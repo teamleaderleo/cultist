@@ -4,24 +4,15 @@
 
 Cultist is an experiment in repository-aware evidence for software work: recover deterministic facts, keep provenance and counterexamples visible, and ask useful questions before inventing project rules.
 
-A central product test is now empirical: **does selected evidence change the next justified action, prevent an expensive wrong turn, or spare a later worker from repeating manual investigation?** That question is already producing retained behavioral evidence rather than sitting only as a future test. Issue #137 remains the broader pressure-test programme while blind paired trials, evidence selection, applicability, representation, and analyzer research continue.
+The product test is empirical: **does selected evidence change the next justified action, prevent an expensive wrong turn, or spare a later worker from repeating manual investigation?** Issue #137 owns that pressure test; [ROADMAP.md](ROADMAP.md) owns the broader research map. Agents should follow [AGENTS.md](AGENTS.md).
 
-> Status: active research prototype in sustained dogfood. The current Rust distribution is named `cargo-cultist`; its public analyzer commands are deterministic, local, and read-only. Research and integration lanes also retain real-repository discriminators, behavioral receipts, external replays, and promotion/demotion evidence. Remote/project adapters that build evidence inventories live outside the core analyzer boundary.
+> Status: active research prototype in sustained dogfood. The Rust distribution is `cargo-cultist`; public analyzer commands are deterministic, local, and read-only. Remote/project adapters can build evidence inventories around the core analyzer boundary.
 
-Rust is the first deep semantic adapter, not the product boundary. Several useful primitives are repository-generic already: Git history, claim provenance, concurrent-change preflight, active-work inventories, scoped evidence packets, and repo-local decision-memory research.
+Rust is the first deep semantic adapter, not the product boundary. Repository-generic primitives already include Git history, claim provenance, concurrent-change preflight, active-work inventories, bounded evidence packets, and repo-local decision-memory research.
 
-See [ROADMAP.md](ROADMAP.md) for the thesis and current research map. Agents working on Cultist should also follow [AGENTS.md](AGENTS.md).
+Traditional linters are strongest after a rule is known. Cultist starts earlier: gather what a repository actually does, keep contradictions and uncertainty visible, and help a worker decide what to inspect, validate, coordinate, or preserve next.
 
-Traditional linters are strongest after a rule is known. Cultist starts earlier. It gathers what a repository actually does, keeps contradictions and uncertainty visible, and helps a worker answer questions such as:
-
-- What evidence would I regret missing before I edit this target?
-- Does my live change disagree with local precedent or explicit project guidance?
-- Is another current change touching the same repository surface?
-- Why does this exception or guard exist?
-- What lesson from this completed work should be recoverable by the next worker?
-- Which current evidence changes what I should inspect, validate, coordinate, or preserve next?
-
-The core claim vocabulary is:
+The claim vocabulary is:
 
 - **PROVEN** — exact machine facts or guarantees;
 - **DERIVED** — deterministic conclusions from explicit facts;
@@ -29,11 +20,11 @@ The core claim vocabulary is:
 - **INFERRED** — plausible interpretations;
 - **UNKNOWN** — evidence is insufficient to recover the answer.
 
-Human-readable and JSON output are rendered from the same provenance-bearing finding model where the command produces findings.
+Repository guidance/authority stays separate from observed precedent. Frequency never silently becomes policy. Human-readable and JSON output use the same provenance-bearing finding model where a command produces findings.
 
 ## Current public commands
 
-The Rust package/binary remains `cargo-cultist`, so installed use is `cargo cultist ...`.
+The package/binary is `cargo-cultist`, so installed use is `cargo cultist ...`.
 
 ### Repository test-module conventions
 
@@ -46,9 +37,7 @@ cargo cultist --format json
 
 ### Change-time evidence
 
-`cargo cultist check` and `cargo cultist diff` run the same existing change analyzer. `check` is a task-oriented alias; `diff` remains available for compatibility and for callers that prefer the exact underlying concept.
-
-The analyzer applies supported change-time evidence such as Rust test-module precedent and generated-companion evidence.
+`cargo cultist check` and `cargo cultist diff` run the same change analyzer. `check` is the task-oriented alias; `diff` remains available for compatibility.
 
 ```bash
 cargo cultist check
@@ -70,7 +59,7 @@ cargo cultist preflight --against other-agent
 cargo cultist preflight --against origin/main --format json
 ```
 
-Direct shared paths are deterministic collision evidence. Different paths remain semantically unknown until an independent evidence source establishes a generated, historical, policy, or explicit coordination relationship.
+Direct shared paths are deterministic collision evidence. Different paths remain semantically `UNKNOWN` until independent generated, historical, policy, or coordination evidence establishes a relationship.
 
 Inventory mode accepts a bounded provider/orchestrator-supplied active-change snapshot:
 
@@ -79,13 +68,9 @@ cargo cultist preflight --inventory active-work.json
 cargo cultist preflight --inventory active-work.json --format json
 ```
 
-The landed inventory contract can carry exact work identity/head/freshness/path observations plus explicit coordination edges such as `depends_on`, `blocks`, `hold_merge_while`, and `supersedes`. The core command does not fetch GitHub itself.
+The inventory contract carries exact work identity, head, freshness, changed-path observations, and optional explicit coordination edges such as `depends_on`, `blocks`, `hold_merge_while`, and `supersedes`. The core command does not fetch GitHub itself.
 
-Cultist's own PR CI dogfoods a GitHub adapter for this contract. Common disjoint runs use a cheap exact-path prefilter and stay quiet; possible overlaps pay for the fuller deterministic analyzer. Research adapters also explore unpublished branches, but bare-branch activity is not enabled by default because divergence alone does not prove somebody is still working there.
-
-Current main now binds that provider-backed dogfood to an explicit provider snapshot identity instead of treating one fetched inventory as timeless truth. The consumer revalidates the observed frontier when it uses the snapshot, preserves `UNKNOWN` when coordination/provider evidence is unresolved, and refuses to manufacture complete file coverage from paginated or partial observations. Complete bounded file coverage is asserted only when one provider response actually proves the selected union. These are landed correctness rules in the active-change path, not future research notes.
-
-Every shipped provider producer binds work identity and changed paths to exactly one GraphQL response: any required pagination, pull-request or file continuation, fails closed as unavailable instead of combining coordinates across reads. Whether the provider's cursors pin separate requests to one immutable snapshot remains `UNKNOWN` — official documentation does not establish it, so populations beyond one response and file sets whose bounded union cannot prove completeness stay unavailable by design until a controlled replay proves otherwise.
+Cultist's PR CI dogfoods a GitHub adapter. Provider-backed evidence is bound to an exact snapshot identity and revalidated at the observed frontier when consumed. Partial or paginated observations fail closed instead of manufacturing complete file coverage. Cross-request provider snapshot consistency remains `UNKNOWN` unless the provider or a controlled replay proves it, so bounded completeness is asserted only from evidence that establishes it.
 
 ### Historical companions
 
@@ -97,7 +82,7 @@ cargo cultist history --max-commits 200 src/protocol.rs
 cargo cultist history --format json src/protocol.rs
 ```
 
-The explorer preserves directional support/opportunity counts, examples, absence counterexamples, exclusions, and known cohort limitations. Historical co-change remains association evidence rather than required-update policy.
+The explorer preserves directional support/opportunity counts, examples, absence counterexamples, exclusions, and cohort limits. Historical co-change remains association evidence, never required-update policy.
 
 ### CI test-filter inventory
 
@@ -108,89 +93,66 @@ cargo cultist ci-tests
 cargo cultist ci-tests --format json
 ```
 
-Unsupported shell forms, ambiguous targets, unknown flags, generated tests, and parse gaps are skipped or surfaced conservatively rather than guessed through.
+Unsupported shell forms, ambiguous targets, unknown flags, generated tests, and parse gaps are skipped or surfaced conservatively instead of guessed through.
 
 ## Agent-facing research views
 
-Several current ideas are intentionally **different projections over shared repository evidence**, not competing sources of truth:
+Current views are projections over shared repository evidence:
 
 ```text
-edit lifecycle (#74)
-  -> WHEN should evidence be recovered, reconciled, or preserved?
-
-just-enough information / JEI (#106)
-  -> WHAT evidence is worth selecting for this task now?
-
-review intelligence (#109)
-  -> WHERE should scarce reviewer attention go?
-
-C1 / compact IR (#113, #115)
-  -> HOW should evidence be represented and transmitted efficiently?
-
-decision memory (#10 and research)
-  -> WHAT reviewed rationale should survive for later workers?
-
-behavioral product pressure (#137)
-  -> DID the selected evidence change the next justified action or reduce rediscovery?
+edit lifecycle (#74)        WHEN recover, reconcile, or preserve evidence?
+JEI (#106)                  WHAT evidence is worth selecting now?
+review intelligence (#109)  WHERE should scarce reviewer attention go?
+C1 / compact IR (#113/#115) HOW should selected evidence travel efficiently?
+decision memory (#10)       WHAT reviewed rationale should survive?
+behavioral pressure (#137)  DID evidence change justified work or reduce rediscovery?
 ```
 
-A new view should reuse authority, provenance, freshness, counterexample, unknown, and omission semantics rather than inventing a parallel vocabulary merely because its output layout is different.
+A new view reuses authority, provenance, freshness, counterexample, `UNKNOWN`, and omission semantics instead of creating a competing truth vocabulary.
 
 ### Bounded context packets
 
-Research under #62 asks the pre-edit question:
+Research under #62 asks:
 
 > What repository evidence would I regret missing before I modify this target?
 
-The packet work emphasizes bounded defaults, truncation receipts, explicit guidance, history, companions/counterexamples, decisions, and useful `UNKNOWN`s rather than giant repository summaries.
-
-That work has already produced real discriminators: scoped evidence recovered decision-changing Stensibly history that file-local packets missed, selected-evidence protection preserved those lessons under severe byte pressure, and retained behavioral episodes record cases where surfaced evidence changed the next action as well as a quiet negative. The next stronger gate is cleaner blind paired execution across fresh sessions, plus broader replication before promotion claims become general product policy.
+Packets use bounded defaults and explicit truncation/omission receipts while preserving guidance, history, companions, counterexamples, decisions, provenance, freshness, and useful `UNKNOWN`s. Selected evidence must survive byte pressure when removing it would change the justified next action.
 
 ### Compact C1 evidence grammar
 
-Merged research provides a lossless C1 encoding of the current `AnalysisReport` model. The converter remains an example rather than a second product binary:
+Merged research provides a lossless C1 encoding of the current `AnalysisReport` model:
 
 ```bash
 cargo run --example cultist_c1 < report.json
 cargo run --example cultist_c1 -- --decode < report.c1
 ```
 
-C1 is structural compression only. It does not select JEI, rank evidence, change authority, or abbreviate meaning. Current machine-report deserialization fails on unknown fields so unsupported future semantics cannot be silently erased during down-conversion.
+C1 is representation compression only. It does not select JEI, rank evidence, change authority, or abbreviate meaning. Unsupported future semantics fail closed during down-conversion.
 
 ### Decision memory
 
-Repo-local decision-memory research explores how intentional exceptions and earned project rationale can become version-controlled evidence for future work. Decision records are evidence, not implicit suppressions, and a model-generated sentence does not become project truth merely because it was written down.
+Repo-local decision-memory research explores how intentional exceptions and earned rationale can become version-controlled evidence. Decision records are evidence, not implicit suppressions, and model-authored prose gains no project authority merely because it was recorded.
 
-## The work loop
-
-The larger agent lifecycle being explored is:
+## Work loop
 
 ```text
-BEFORE
-  recover bounded evidence for the target
-
-DURING
-  reconcile the live change with check/diff, precedent, guidance, active work,
-  counterexamples, decisions, trust boundaries, and unknowns
-
-AFTER
-  preserve an intentional decision or earned lesson when appropriate
-
-NEXT WORKER
-  retrieves that repository memory before repeating the same investigation
+BEFORE  recover bounded target evidence
+DURING  reconcile the live change with evidence, guidance, counterexamples, active work, and UNKNOWNs
+AFTER   preserve an intentional decision or earned lesson when useful
+NEXT    let a later worker recover that repository memory
 ```
 
-Or more compactly:
+Or:
 
 ```text
 retrieve -> work -> reconcile -> preserve -> retrieve
 ```
 
-The product goal is to make Cultist fade into the work itself. A worker should be able to ask for the evidence it needs, do the work, and leave useful reviewed knowledge behind. The most prominent automatic evidence should earn its interruption by changing inspection, validation, coordination, or preservation behavior often enough to justify the attention cost.
+The prominent automatic evidence should earn its interruption by changing inspection, validation, coordination, or preservation behavior often enough to justify the attention cost.
 
 ## Research discipline
 
-The repository contains standalone examples and durable receipts for experiments that are not public product features. The preferred research lifecycle is:
+Standalone examples and durable receipts hold experiments that are outside the public product surface. The research loop is:
 
 ```text
 hypothesis
@@ -201,21 +163,7 @@ hypothesis
 -> keep, weaken, split, reject, or promote
 ```
 
-Some research examples intentionally execute repository tooling. Those effectful experiments carry explicit boundaries and are not silently invoked by ordinary analyzer commands.
-
-A successful experiment does not automatically become a lint or public feature. Failed experiments are retained when they expose a useful boundary.
-
-Behavioral evidence adds another useful promotion question:
-
-```text
-surfaced
--> consulted?
--> changed the next action?
--> prevented or reversed a wrong turn?
--> ignored / irrelevant / stale / needed stronger evidence?
-```
-
-The retained collaboration corpus already contains both action-changing and quiet cases. This remains an inspectable scorecard, not a single opaque risk or quality number.
+A successful experiment does not automatically become a lint or public feature. Failed experiments stay useful when they expose a boundary. For dogfood signals, receipts, view taxonomy, promotion choices, and worked examples, use [docs/agent-playbook.md](docs/agent-playbook.md).
 
 ## Usage while developing
 
@@ -244,31 +192,12 @@ cargo cultist ci-tests
 
 The binary can also be invoked directly as `cargo-cultist`.
 
-## Dogfooding
+## Dogfooding and current direction
 
 CI runs formatting, Clippy, tests, and the public analyzers against Cultist itself. Pull-request CI also runs the non-blocking active-work heads-up.
 
-Dogfood is product input. When work exposes duplicate effort, a missed repository fact, stale evidence, misleading metadata, a false assumption, a useful counterexample, or repeated manual investigation, preserve the exact evidence and ask whether the smallest useful Cultist improvement can surface it earlier next time.
+Dogfood is product input. Preserve exact evidence when work exposes duplicate effort, missed repository facts, stale evidence, misleading metadata, false assumptions, useful counterexamples, or repeated manual investigation. Record the downstream consequence when visible: what changed next, what stayed quiet, and which evidence proved too weak or stale. Generalization requires a discriminator and negative control.
 
-Also record the downstream consequence when it is visible: did the evidence change the next inspection, validation step, coordination decision, or implementation? Did the worker ignore it? Did a natural quiet case remain quiet? Those receipts help decide which evidence families deserve automatic delivery.
-
-Do not turn task friction into a universal rule without a discriminator and negative control.
-
-## Current direction
-
-Near-term work is increasingly about promoting, weakening, and composing evidence from actual dogfood rather than merely adding new analyzers:
-
-- expand the retained behavioral corpus and run cleaner blind paired fresh-session trials (#137, #267);
-- preserve explicitly selected evidence through scoped packet budgeting and fail closed below the selected evidence floor;
-- reuse prior CI/promotion receipts when exact compatibility evidence supports reuse, while keeping semantic independence `UNKNOWN` when it has not been earned;
-- refine evidence acquisition so replay-rejected or unselected alternatives do not create needless investigation work;
-- continue bounded pre-edit JEI and lifecycle integration;
-- keep review-attention projections over the same evidence;
-- maintain active-change coordination with explicit provider snapshot identity, current-frontier revalidation, and bounded-coverage uncertainty;
-- continue decision-memory authority/applicability research;
-- enrich scoped and temporal precedent with counterexamples;
-- keep explicit repository guidance and instruction freshness separate from inferred precedent;
-- promote, demote, or quiet evidence families based on inspectable interruption outcomes;
-- move repeated, well-understood lessons into deterministic policy only after the evidence earns that promotion.
+Near-term work focuses on behavioral evaluation, bounded selected-evidence delivery, evidence applicability/reuse, active-work freshness and completeness, decision memory, counterexamples, explicit guidance, and promotion/demotion based on inspectable outcomes. [ROADMAP.md](ROADMAP.md) and the linked owner issues carry the evolving research chronology.
 
 Optional model-assisted explanation can sit on top of bounded evidence later. The deterministic evidence packet must remain useful without a model.
