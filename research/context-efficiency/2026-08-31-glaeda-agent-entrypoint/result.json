@@ -1,0 +1,43 @@
+{
+  "schema": "cultist-context-efficiency-result/v1",
+  "date": "2026-08-31",
+  "encoding": "o200k_base",
+  "glaeda": {
+    "base": "a7343f85b5fd3dcf840f10c94c7884b050b66617",
+    "candidate": "d3f0f67637ce00a5528bd00d7086c5af02c1512c",
+    "oldRootTokens": 4246,
+    "newRootTokens": 1218,
+    "coldReferenceTokens": 1001,
+    "automaticRootTokenDelta": -3028,
+    "automaticRootReductionPercent": 71.314,
+    "rootPlusReferenceTokens": 2219,
+    "rootPlusReferenceDelta": -2027,
+    "rootPlusReferenceReductionPercent": 47.739
+  },
+  "safetyReplay": {
+    "controlInputTokens": 107229,
+    "treatmentInputTokens": 95871,
+    "inputTokenDelta": -11358,
+    "inputTokenReductionPercent": 10.592,
+    "controlCommands": 4,
+    "treatmentCommands": 3,
+    "controlRawEventBytes": 921686,
+    "treatmentRawEventBytes": 30510,
+    "rawEventByteDelta": -891176,
+    "rawEventByteReductionPercent": 96.69,
+    "behavioralOutcome": "same safety decision class and critical blockers"
+  },
+  "ordinaryReplay": {
+    "behavioralOutcome": "same decision class",
+    "commandCountOutcome": "inconclusive fresh-run variance",
+    "retainedNegative": true
+  },
+  "eventProjection": {
+    "controlRawBytes": 921686,
+    "contentFreeViewBytes": 1227,
+    "finalStructuredViewBytes": 5059,
+    "rawContentDefault": false
+  },
+  "rawLogsPublished": false,
+  "authorizesGeneralCompression": false
+}
