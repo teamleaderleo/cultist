@@ -97,6 +97,143 @@ class HelperRoutingEvidenceTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     evidence.summarize(receipt)
 
+    def test_reconcile_tasks_combines_complementary_evidence(self):
+        # Base execution receipt (like Stensibly projection)
+        exec_task = {
+            "task_ref": "https://github.com/teamleaderleo/compute-node-bootstrap/pull/35",
+            "evidence_refs": ["stensibly-command:sha256:abc"],
+            "route": None,
+            "classification_timing": None,
+            "classification": {"oracle_strength": None, "semantic_ambiguity": None, "coupling": None, "failure_cost": None},
+            "outcomes": {"provider_success": None, "process_completed": None, "verified": True, "accepted": None},
+            "metrics": {"retries": None, "repair_minutes": None, "wall_seconds": None, "task_tokens": None},
+            "provider_usage": [],
+            "limitations": ["OBSERVED: test verification passed."],
+        }
+        # Review outcome annotation
+        review_task = copy.deepcopy(self.task)
+        review_task["outcomes"]["verified"] = None  # review didn't independently re-verify, but verified is in exec_task
+        review_task["route"] = "cheap-first"
+        review_task["classification_timing"] = "before-dispatch"
+
+        reconciled = evidence.reconcile_tasks([exec_task, review_task])
+        self.assertEqual(len(reconciled), 1)
+        r = reconciled[0]
+        self.assertEqual(r["route"], "cheap-first")
+        self.assertEqual(r["classification_timing"], "before-dispatch")
+        self.assertEqual(r["classification"]["oracle_strength"], "strong")
+        self.assertEqual(r["outcomes"]["verified"], True)
+        self.assertEqual(r["outcomes"]["accepted"], True)
+        self.assertIn("stensibly-command:sha256:abc", r["evidence_refs"])
+        self.assertEqual(len(r["provider_usage"]), 1)
+
+    def test_reconcile_tasks_fails_on_conflicting_values(self):
+        for field, bad_val in (
+            ("route", "frontier-first"),
+            ("classification_timing", "before-dispatch"),
+        ):
+            with self.subTest(field=field):
+                t1 = copy.deepcopy(self.task)
+                t1["route"] = "cheap-first"
+                t1["classification_timing"] = "retrospective"
+                t2 = copy.deepcopy(self.task)
+                t2[field] = bad_val
+                with self.assertRaisesRegex(ValueError, "conflicting"):
+                    evidence.reconcile_tasks([t1, t2])
+
+        # Conflicting classification
+        t1 = copy.deepcopy(self.task)
+        t2 = copy.deepcopy(self.task)
+        t2["classification"]["oracle_strength"] = "weak"
+        with self.assertRaisesRegex(ValueError, "conflicting classification"):
+            evidence.reconcile_tasks([t1, t2])
+
+        # Conflicting outcomes
+        t1 = copy.deepcopy(self.task)
+        t2 = copy.deepcopy(self.task)
+        t2["outcomes"]["accepted"] = False
+        with self.assertRaisesRegex(ValueError, "conflicting outcome"):
+            evidence.reconcile_tasks([t1, t2])
+
+    def test_merge_receipts_combines_distinct_receipts_and_reconciles(self):
+        r1 = copy.deepcopy(self.receipt)
+        r2 = copy.deepcopy(self.receipt)
+        r2["tasks"][0]["task_ref"] = "second-task"
+        merged = evidence.merge_receipts([r1, r2])
+        self.assertEqual(len(merged["tasks"]), 2)
+
+        # Merging with duplicate task_ref without reconcile fails
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            evidence.merge_receipts([r1, r1], reconcile=False)
+
+        # Merging with duplicate task_ref with reconcile succeeds
+        reconciled_receipt = evidence.merge_receipts([r1, r1], reconcile=True)
+        self.assertEqual(len(reconciled_receipt["tasks"]), 1)
+
+    def test_compare_cohorts_evaluates_matched_and_unmatched_arms(self):
+        # Create cheap-first task and frontier-first task with same classification
+        cheap_task = copy.deepcopy(self.task)
+        cheap_task["route"] = "cheap-first"
+        cheap_task["metrics"]["repair_minutes"] = 10.0
+        cheap_task["metrics"]["retries"] = 1
+
+        frontier_task = copy.deepcopy(self.task)
+        frontier_task["task_ref"] = "frontier-task"
+        frontier_task["route"] = "frontier-first"
+        frontier_task["metrics"]["repair_minutes"] = 2.0
+        frontier_task["metrics"]["retries"] = 0
+
+        receipt = {"schema": evidence.SCHEMA, "tasks": [cheap_task, frontier_task]}
+        result = evidence.summarize(receipt, include_comparisons=True)
+        comps = result["comparisons"]
+
+        self.assertEqual(len(comps["matched_comparisons"]), 1)
+        matched = comps["matched_comparisons"][0]
+        self.assertEqual(matched["classification"]["oracle_strength"], "strong")
+        self.assertEqual(len(matched["cohort_groups"]), 2)
+
+        # Check metrics per accepted task
+        cheap_group = [g for g in comps["groups"] if g["route"] == "cheap-first"][0]
+        self.assertEqual(cheap_group["acceptance_rate"], 1.0)
+        self.assertEqual(cheap_group["metrics_per_accepted_task"]["repair_minutes"]["known_total_per_accepted"], 10.0)
+        self.assertEqual(cheap_group["metrics_per_accepted_task"]["retries"]["known_total_per_accepted"], 1.0)
+
+    def test_negative_control_records_zero_acceptance_and_verification_failure(self):
+        defect_task = copy.deepcopy(self.task)
+        defect_task["task_ref"] = "defect-task"
+        defect_task["outcomes"] = {
+            "provider_success": True,
+            "process_completed": False,
+            "verified": False,
+            "accepted": False,
+        }
+        receipt = {"schema": evidence.SCHEMA, "tasks": [defect_task]}
+        result = evidence.summarize(receipt, include_comparisons=True)
+        group = result["comparisons"]["groups"][0]
+        self.assertEqual(group["acceptance_rate"], 0.0)
+        self.assertEqual(group["verification_rate"], 0.0)
+        self.assertIsNone(group["metrics_per_accepted_task"]["repair_minutes"])
+
+    def test_cli_execution_via_stdin_and_file(self):
+        import subprocess
+        script = Path(__file__).resolve().parents[1] / "scripts/helper_routing_evidence.py"
+        # Test positional file
+        out = subprocess.check_output(["python3", str(script), str(RECEIPT)], text=True)
+        data = json.loads(out)
+        self.assertEqual(data["task_count"], 1)
+
+        # Test stdin with '-'
+        out_stdin = subprocess.check_output(["python3", str(script), "-"], input=RECEIPT.read_text(), text=True)
+        self.assertEqual(json.loads(out_stdin)["task_count"], 1)
+
+        # Test stdin default
+        out_default = subprocess.check_output(["python3", str(script)], input=RECEIPT.read_text(), text=True)
+        self.assertEqual(json.loads(out_default)["task_count"], 1)
+
+        # Test with --compare
+        out_comp = subprocess.check_output(["python3", str(script), str(RECEIPT), "--compare"], text=True)
+        self.assertIn("comparisons", json.loads(out_comp))
+
 
 if __name__ == "__main__":
     unittest.main()
