@@ -5,7 +5,7 @@ This research receipt records a bounded four-task cohort under [Cultist #383](ht
 ## Hypothesis and Evaluation
 
 Under Cultist #383, the routing discriminator for cheap workers (Muse/Luna/Gemini class) is not benchmark score alone, but the cost and reliability of detecting a wrong answer:
-* **Strong oracle, low ambiguity, local coupling, low failure cost**: cheap-first workers achieve high acceptance when bounded deterministic tests verify behavior.
+* **Strong oracle, low ambiguity, local coupling, low failure cost**: observed 2/2 acceptance in this single-arm retrospective cell when bounded deterministic tests verified behavior; no matched counter-route, so no causal routing claim.
 * **Negative control**: cheap worker self-reports (`provider_success: true`) are uncoupled from real success; without independent machine verification, undetected failures require human/commander escalation.
 * **Execution vs Acceptance separation**: physical test execution receipts (from Stensibly #1841) establish command verification, but full task acceptance remains distinct.
 
@@ -19,7 +19,7 @@ Under Cultist #383, the routing discriminator for cheap workers (Muse/Luna/Gemin
    * Result: Muse implemented peer deadline kill-after grace; verified by positive tests (exit 137) and a negative control omitting grace (exit 124); merged and accepted (cost: 0).
 3. **`stensibly#1821` Negative Control** ([PR #1821](https://github.com/teamleaderleo/stensibly/pull/1821)):
    * Class: strong oracle, low ambiguity, subsystem coupling, medium failure cost (`cheap-first`, retrospective).
-   * Result: Worker emitted structured `SUCCESS` event followed by exit code 7; `provider_success: true`, `process_completed: false`, `verified: false`, `accepted: false`. Required follow-on repair in PR #1840/#1841. Proves worker self-report cannot substitute for machine oracle.
+   * Result: Defective attempt (task_ref attempt-scoped) emitted structured `SUCCESS` event followed by exit code 7; `provider_success: true`, `process_completed: false`, `verified: false`, `accepted: false`. Required follow-on repair in PR #1840/#1841. This attempt-level rejection is distinct from the PR's final merge state. Proves worker self-report cannot substitute for machine oracle.
 4. **`stensibly-1841-adapter-verify`** ([Stensibly PR #1841](https://github.com/teamleaderleo/stensibly/pull/1841)):
    * Class: unrouted workstation execution projection (`route: null`, `classification: null`).
    * Result: Named `verify_focused` check succeeded (`verified: true`); parent task acceptance and process completion remain `unknown`.

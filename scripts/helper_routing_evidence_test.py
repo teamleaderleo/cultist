@@ -214,6 +214,60 @@ class HelperRoutingEvidenceTests(unittest.TestCase):
         self.assertEqual(group["verification_rate"], 0.0)
         self.assertIsNone(group["metrics_per_accepted_task"]["repair_minutes"])
 
+    def test_unknown_only_outcomes_yield_null_rates_not_zero(self):
+        unknown_task = copy.deepcopy(self.task)
+        unknown_task["task_ref"] = "unknown-task"
+        unknown_task["outcomes"] = {
+            "provider_success": None,
+            "process_completed": None,
+            "verified": None,
+            "accepted": None,
+        }
+        receipt = {"schema": evidence.SCHEMA, "tasks": [unknown_task]}
+        result = evidence.summarize(receipt, include_comparisons=True)
+        group = result["comparisons"]["groups"][0]
+        self.assertIsNone(group["acceptance_rate"])
+        self.assertIsNone(group["verification_rate"])
+
+    def test_mixed_known_unknown_rates_use_known_denominator(self):
+        known_task = copy.deepcopy(self.task)
+        known_task["task_ref"] = "known-task"
+        known_task["outcomes"] = {
+            "provider_success": None,
+            "process_completed": None,
+            "verified": True,
+            "accepted": True,
+        }
+        unknown_task = copy.deepcopy(self.task)
+        unknown_task["task_ref"] = "unknown-task-2"
+        unknown_task["outcomes"] = {
+            "provider_success": None,
+            "process_completed": None,
+            "verified": None,
+            "accepted": None,
+        }
+        # Same route/timing/classification so both land in one group.
+        receipt = {"schema": evidence.SCHEMA, "tasks": [known_task, unknown_task]}
+        result = evidence.summarize(receipt, include_comparisons=True)
+        group = result["comparisons"]["groups"][0]
+        self.assertEqual(group["tasks"], 2)
+        self.assertEqual(group["acceptance_rate"], 1.0)
+        self.assertEqual(group["verification_rate"], 1.0)
+
+    def test_timing_mismatch_is_not_a_matched_comparison(self):
+        cheap_task = copy.deepcopy(self.task)
+        cheap_task["route"] = "cheap-first"
+        cheap_task["classification_timing"] = "retrospective"
+        frontier_task = copy.deepcopy(self.task)
+        frontier_task["task_ref"] = "frontier-task"
+        frontier_task["route"] = "frontier-first"
+        frontier_task["classification_timing"] = "before-dispatch"
+        receipt = {"schema": evidence.SCHEMA, "tasks": [cheap_task, frontier_task]}
+        result = evidence.summarize(receipt, include_comparisons=True)
+        comps = result["comparisons"]
+        self.assertEqual(len(comps["matched_comparisons"]), 0)
+        self.assertEqual(len(comps["unmatched_cohorts"]), 2)
+
     def test_cli_execution_via_stdin_and_file(self):
         import subprocess
         script = Path(__file__).resolve().parents[1] / "scripts/helper_routing_evidence.py"

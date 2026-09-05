@@ -171,9 +171,12 @@ def compare_cohorts(groups):
     by_classification = {}
 
     for g in groups:
-        tasks_count = g["tasks"]
-        accepted_true = g["outcomes"]["accepted"]["true"]
-        verified_true = g["outcomes"]["verified"]["true"]
+        accepted = g["outcomes"]["accepted"]
+        verified = g["outcomes"]["verified"]
+        accepted_true = accepted["true"]
+        accepted_known = accepted["true"] + accepted["false"]
+        verified_true = verified["true"]
+        verified_known = verified["true"] + verified["false"]
 
         metrics_per_accepted = {}
         for k in METRICS:
@@ -191,15 +194,18 @@ def compare_cohorts(groups):
             "route": g["route"],
             "classification_timing": g["classification_timing"],
             "classification": g["classification"],
-            "tasks": tasks_count,
-            "acceptance_rate": round(accepted_true / tasks_count, 4) if tasks_count > 0 else None,
-            "verification_rate": round(verified_true / tasks_count, 4) if tasks_count > 0 else None,
+            "tasks": g["tasks"],
+            "acceptance_rate": round(accepted_true / accepted_known, 4) if accepted_known > 0 else None,
+            "verification_rate": round(verified_true / verified_known, 4) if verified_known > 0 else None,
             "outcomes": g["outcomes"],
             "metrics_per_accepted_task": metrics_per_accepted,
         }
         group_analyses.append(analysis)
 
-        class_key = tuple(g["classification"][k] for k in sorted(CLASSES))
+        # Match only within identical difficulty class AND classification timing;
+        # retrospective tags must never pool with before-dispatch arms.
+        class_key = (g["classification_timing"],
+                     tuple(g["classification"][k] for k in sorted(CLASSES)))
         by_classification.setdefault(class_key, []).append(analysis)
 
     matched_pairs = []
@@ -209,14 +215,16 @@ def compare_cohorts(groups):
         if len(cohort_groups) > 1 and len(routes) > 1:
             matched_pairs.append({
                 "classification": cohort_groups[0]["classification"],
+                "classification_timing": cohort_groups[0]["classification_timing"],
                 "cohort_groups": cohort_groups,
             })
         else:
             unmatched_cohorts.append({
                 "classification": cohort_groups[0]["classification"],
+                "classification_timing": cohort_groups[0]["classification_timing"],
                 "routes": list(routes),
                 "tasks": sum(cg["tasks"] for cg in cohort_groups),
-                "limitation": "Single arm or unrouted only; no matched counter-route under this difficulty class."
+                "limitation": "Single arm, unrouted only, or timing-mismatched; no matched counter-route under this difficulty class and classification timing."
             })
 
     return {
