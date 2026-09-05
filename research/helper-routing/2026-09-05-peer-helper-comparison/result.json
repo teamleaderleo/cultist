@@ -1,0 +1,154 @@
+{
+  "schema": "cultist-helper-routing-evidence/v1",
+  "tasks": [
+    {
+      "task_ref": "https://github.com/teamleaderleo/compute-node-bootstrap/pull/35",
+      "evidence_refs": [
+        "https://github.com/teamleaderleo/cultist/issues/383#issuecomment-5549768574",
+        "https://github.com/teamleaderleo/compute-node-bootstrap/commit/56a07f63bed0ac50eeff2f1fa6c5ae460dea9c27",
+        "https://github.com/teamleaderleo/compute-node-bootstrap/pull/35"
+      ],
+      "route": "cheap-first",
+      "classification_timing": "retrospective",
+      "classification": {
+        "oracle_strength": "strong",
+        "semantic_ambiguity": "low",
+        "coupling": "local",
+        "failure_cost": "low"
+      },
+      "outcomes": {
+        "provider_success": null,
+        "process_completed": null,
+        "verified": true,
+        "accepted": true
+      },
+      "metrics": {
+        "retries": null,
+        "repair_minutes": null,
+        "wall_seconds": null,
+        "task_tokens": null
+      },
+      "provider_usage": [
+        {
+          "provider": "Muse",
+          "metric": "wrapper_reported_cost",
+          "unit": null,
+          "scope": "Two helper wrapper receipts: read-only review and selected repair implementation",
+          "value": 0,
+          "evidence_ref": "https://github.com/teamleaderleo/cultist/issues/383#issuecomment-5549768574"
+        }
+      ],
+      "limitations": [
+        "OBSERVED: the owner comment reports two Muse runs, independent Codex review, focused test rerun, merge, and verified launcher installation.",
+        "OBSERVED: pull request #35 merged at commit 56a07f63bed0ac50eeff2f1fa6c5ae460dea9c27. Acceptance applies to the selected model-identity guard.",
+        "UNKNOWN: source comment gives no cost unit, end-to-end review/repair accounting, elapsed time, retries, task tokens, or explicit provider/process result events."
+      ]
+    },
+    {
+      "task_ref": "https://github.com/teamleaderleo/compute-node-bootstrap/pull/36",
+      "evidence_refs": [
+        "https://github.com/teamleaderleo/compute-node-bootstrap/pull/36",
+        "https://github.com/teamleaderleo/compute-node-bootstrap/commit/6c52c6710a7d824229d9e89a6ea840a5581df40c"
+      ],
+      "route": "cheap-first",
+      "classification_timing": "retrospective",
+      "classification": {
+        "oracle_strength": "strong",
+        "semantic_ambiguity": "low",
+        "coupling": "local",
+        "failure_cost": "low"
+      },
+      "outcomes": {
+        "provider_success": null,
+        "process_completed": null,
+        "verified": true,
+        "accepted": true
+      },
+      "metrics": {
+        "retries": null,
+        "repair_minutes": null,
+        "wall_seconds": null,
+        "task_tokens": null
+      },
+      "provider_usage": [
+        {
+          "provider": "Muse",
+          "metric": "wrapper_reported_cost",
+          "unit": null,
+          "scope": "Muse implemented production change; Codex reviewed and strengthened tests",
+          "value": 0,
+          "evidence_ref": "https://github.com/teamleaderleo/compute-node-bootstrap/pull/36"
+        }
+      ],
+      "limitations": [
+        "OBSERVED: pull request #36 merged at commit 6c52c6710a7d824229d9e89a6ea840a5581df40c; negative control explicitly verified exit 124 failure when kill-after grace was omitted.",
+        "OBSERVED: test harness exercises forced exit 137, bounded elapsed time, and positive/negative controls on Big Red."
+      ]
+    },
+    {
+      "task_ref": "https://github.com/teamleaderleo/stensibly/pull/1821#issuecomment-exit7-defect",
+      "evidence_refs": [
+        "https://github.com/teamleaderleo/cultist/issues/383#issuecomment-5549768574",
+        "https://github.com/teamleaderleo/stensibly/pull/1821"
+      ],
+      "route": "cheap-first",
+      "classification_timing": "retrospective",
+      "classification": {
+        "oracle_strength": "strong",
+        "semantic_ambiguity": "low",
+        "coupling": "subsystem",
+        "failure_cost": "medium"
+      },
+      "outcomes": {
+        "provider_success": true,
+        "process_completed": false,
+        "verified": false,
+        "accepted": false
+      },
+      "metrics": {
+        "retries": 1,
+        "repair_minutes": null,
+        "wall_seconds": null,
+        "task_tokens": null
+      },
+      "provider_usage": [],
+      "limitations": [
+        "OBSERVED: provider emitted structured SUCCESS event but runner process exited with status 7; independent review caught defect and rejected unverified work.",
+        "DERIVED: negative control proving provider_success is uncoupled from process completion, verification, and acceptance.",
+        "OBSERVED: required follow-on repair in Stensibly PR #1840 / #1841 to handle exit and signal failures explicitly."
+      ]
+    },
+    {
+      "task_ref": "stensibly:glaeda/item-1/teamleaderleo%2Fglaeda/cccccccccccccccccccccccccccccccccccccccc/dddddddddddddddddddddddddddddddddddddddd",
+      "evidence_refs": [
+        "https://github.com/teamleaderleo/stensibly/pull/1841",
+        "stensibly-command:sha256:fixture-command-1"
+      ],
+      "route": null,
+      "classification_timing": null,
+      "classification": {
+        "oracle_strength": null,
+        "semantic_ambiguity": null,
+        "coupling": null,
+        "failure_cost": null
+      },
+      "outcomes": {
+        "provider_success": null,
+        "process_completed": null,
+        "verified": true,
+        "accepted": null
+      },
+      "metrics": {
+        "retries": null,
+        "repair_minutes": null,
+        "wall_seconds": null,
+        "task_tokens": null
+      },
+      "provider_usage": [],
+      "limitations": [
+        "OBSERVED: exact verify_focused workstation command succeeded in physical execution.",
+        "UNKNOWN: source-work acceptance, route, classification, provider outcome, and total task accounting are not established by workstation execution receipts alone."
+      ]
+    }
+  ]
+}
