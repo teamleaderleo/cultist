@@ -31,6 +31,8 @@ jobs:
             scripts/project_memory_github_lineage.py \
             scripts/project_memory_github_lineage_test.py
           python scripts/project_memory_github_lineage_test.py
+      - name: Helper routing research evidence controls
+        run: python scripts/helper_routing_evidence_test.py
       - name: GitHub review-memory adapter controls
         run: |
           python -m py_compile \
