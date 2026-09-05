@@ -1,0 +1,48 @@
+{
+  "schema": "cultist-helper-routing-evidence/v1",
+  "tasks": [
+    {
+      "task_ref": "https://github.com/teamleaderleo/compute-node-bootstrap/pull/35",
+      "evidence_refs": [
+        "https://github.com/teamleaderleo/cultist/issues/383#issuecomment-5549768574",
+        "https://github.com/teamleaderleo/compute-node-bootstrap/commit/56a07f63bed0ac50eeff2f1fa6c5ae460dea9c27"
+      ],
+      "route": null,
+      "classification_timing": "retrospective",
+      "classification": {
+        "oracle_strength": "strong",
+        "semantic_ambiguity": "low",
+        "coupling": "local",
+        "failure_cost": "low"
+      },
+      "outcomes": {
+        "provider_success": null,
+        "process_completed": null,
+        "verified": true,
+        "accepted": true
+      },
+      "metrics": {
+        "retries": null,
+        "repair_minutes": null,
+        "wall_seconds": null,
+        "task_tokens": null
+      },
+      "provider_usage": [
+        {
+          "provider": "Muse",
+          "metric": "wrapper_reported_cost",
+          "unit": null,
+          "scope": "Two helper wrapper receipts: read-only review and selected repair implementation",
+          "value": 0,
+          "evidence_ref": "https://github.com/teamleaderleo/cultist/issues/383#issuecomment-5549768574"
+        }
+      ],
+      "limitations": [
+        "OBSERVED: the owner comment reports two Muse runs, independent Codex review, a focused test rerun, merge, and verified launcher installation; this receipt does not independently replay the run logs.",
+        "OBSERVED: the pull request is merged at the recorded commit. Acceptance applies to the selected model-identity guard, not every proposal in the initial review.",
+        "UNKNOWN: source comment gives no cost unit, end-to-end review/repair accounting, elapsed time, retries, task tokens, or explicit provider/process result events. Two runs with different purposes are not automatically one retry.",
+        "INFERRED: classification is provisional and retrospective. The source does not establish a predeclared cheap-first/frontier-first arm or matched control. One accepted task cannot establish routing superiority."
+      ]
+    }
+  ]
+}
