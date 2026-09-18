@@ -46,6 +46,7 @@ pub fn analyze_test_module_files(paths: &[PathBuf]) -> Result<TestModuleReport, 
 
 fn test_module_report(scan: RustFactScan) -> TestModuleReport {
     performance::record_rust_scan(scan.parsed_files, scan.cache_hits);
+    performance::record_rust_prefiltered(scan.prefiltered_files);
     let mut report = TestModuleReport::default();
 
     for file in scan.files {
@@ -163,12 +164,14 @@ mod tests {
         fs::create_dir_all(root.join("src")).unwrap();
         run_git(&root, &["init", "-q"]);
         fs::write(root.join("src/lib.rs"), "#[cfg(test)]\nmod tests {}\n").unwrap();
+        fs::write(root.join("src/plain.rs"), "const VALUE: u8 = 1;\n").unwrap();
 
         let (report, counters) = performance::capture(|| analyze_test_modules(&root).unwrap());
 
         assert_eq!(report.occurrences.len(), 1);
         assert_eq!(counters.git_subprocesses, 4);
         assert_eq!(counters.rust_files_parsed, 1);
+        assert_eq!(counters.rust_files_prefiltered, 1);
         assert_eq!(counters.rust_cache_hits, 0);
 
         fs::remove_dir_all(root).unwrap();

@@ -44,6 +44,7 @@ pub struct RustFactScan {
     pub files: Vec<RustFactFile>,
     pub cache_hits: usize,
     pub parsed_files: usize,
+    pub prefiltered_files: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -88,7 +89,7 @@ pub fn scan_rust_repository(
 ) -> Result<RustFactScan, Box<dyn Error>> {
     let inputs = rust_inputs(root, excluded_paths, skipped_dirs)?;
     let cache = FactCache::from_environment();
-    scan_inputs(&inputs, cache.as_ref())
+    scan_inputs(&inputs, cache.as_ref(), true)
 }
 
 pub fn scan_rust_paths(paths: &[PathBuf]) -> Result<RustFactScan, Box<dyn Error>> {
@@ -102,12 +103,13 @@ pub fn scan_rust_paths(paths: &[PathBuf]) -> Result<RustFactScan, Box<dyn Error>
             content_id: None,
         })
         .collect();
-    scan_inputs(&inputs, None)
+    scan_inputs(&inputs, None, false)
 }
 
 fn scan_inputs(
     inputs: &[RustInput],
     cache: Option<&FactCache>,
+    allow_prefilter: bool,
 ) -> Result<RustFactScan, Box<dyn Error>> {
     let mut scan = RustFactScan::default();
 
@@ -121,8 +123,16 @@ fn scan_inputs(
             scan.cache_hits += 1;
             facts
         } else {
-            scan.parsed_files += 1;
-            let facts = extract_rust_file(&input.path)?;
+            let (facts, prefiltered) = if allow_prefilter {
+                extract_rust_file_with_prefilter(&input.path)?
+            } else {
+                (extract_rust_file(&input.path)?, false)
+            };
+            if prefiltered {
+                scan.prefiltered_files += 1;
+            } else {
+                scan.parsed_files += 1;
+            }
             if let (Some(cache), Some(content_id)) = (cache, input.content_id.as_deref()) {
                 cache.store(content_id, &facts);
             }
@@ -142,6 +152,22 @@ fn scan_inputs(
 fn extract_rust_file(path: &Path) -> Result<RustFileFacts, Box<dyn Error>> {
     let source = fs::read_to_string(path)?;
     Ok(extract_rust_source(&source))
+}
+
+fn extract_rust_file_with_prefilter(path: &Path) -> Result<(RustFileFacts, bool), Box<dyn Error>> {
+    let source = fs::read_to_string(path)?;
+    if !may_contain_shared_rust_facts(&source) {
+        return Ok((RustFileFacts::default(), true));
+    }
+    Ok((extract_rust_source(&source), false))
+}
+
+/// The shared facts currently come from attributes, module declarations, and
+/// function declarations. Their Rust spellings contain `#[`, `mod`, or `fn`.
+/// This deliberately treats any byte-level lookalike as a reason to parse, so
+/// comments and strings can only cause extra work, never a missed fact.
+fn may_contain_shared_rust_facts(source: &str) -> bool {
+    source.contains("#[") || source.contains("mod") || source.contains("fn")
 }
 
 fn extract_rust_source(source: &str) -> RustFileFacts {
@@ -589,18 +615,18 @@ mod tests {
         run_git(&root, &["commit", "-q", "-m", "baseline"]);
 
         let inputs = rust_inputs(&root, &BTreeSet::new(), &[".git", "target"]).unwrap();
-        let first = scan_inputs(&inputs, Some(&cache)).unwrap();
+        let first = scan_inputs(&inputs, Some(&cache), false).unwrap();
         assert_eq!(first.parsed_files, 1);
         assert_eq!(first.cache_hits, 0);
 
-        let second = scan_inputs(&inputs, Some(&cache)).unwrap();
+        let second = scan_inputs(&inputs, Some(&cache), false).unwrap();
         assert_eq!(second.parsed_files, 0);
         assert_eq!(second.cache_hits, 1);
 
         run_git(&root, &["mv", "src/lib.rs", "src/renamed.rs"]);
         run_git(&root, &["commit", "-q", "-m", "rename"]);
         let renamed_inputs = rust_inputs(&root, &BTreeSet::new(), &[".git", "target"]).unwrap();
-        let renamed = scan_inputs(&renamed_inputs, Some(&cache)).unwrap();
+        let renamed = scan_inputs(&renamed_inputs, Some(&cache), false).unwrap();
         assert_eq!(renamed.parsed_files, 0);
         assert_eq!(renamed.cache_hits, 1);
         assert!(renamed.files[0].path.ends_with("src/renamed.rs"));
@@ -620,11 +646,11 @@ mod tests {
         run_git(&root, &["commit", "-q", "-m", "baseline"]);
 
         let inputs = rust_inputs(&root, &BTreeSet::new(), &[".git", "target"]).unwrap();
-        let _ = scan_inputs(&inputs, Some(&cache)).unwrap();
+        let _ = scan_inputs(&inputs, Some(&cache), false).unwrap();
 
         fs::write(&source, "#[cfg(test)]\nmod changed_tests {}\n").unwrap();
         let dirty_inputs = rust_inputs(&root, &BTreeSet::new(), &[".git", "target"]).unwrap();
-        let dirty = scan_inputs(&dirty_inputs, Some(&cache)).unwrap();
+        let dirty = scan_inputs(&dirty_inputs, Some(&cache), false).unwrap();
         assert_eq!(dirty.cache_hits, 0);
         assert_eq!(dirty.parsed_files, 1);
         assert_eq!(dirty.files[0].facts.test_modules[0].name, "changed_tests");
@@ -643,16 +669,88 @@ mod tests {
         run_git(&root, &["commit", "-q", "-m", "baseline"]);
 
         let inputs = rust_inputs(&root, &BTreeSet::new(), &[".git", "target"]).unwrap();
-        let first = scan_inputs(&inputs, Some(&cache)).unwrap();
+        let first = scan_inputs(&inputs, Some(&cache), false).unwrap();
         assert_eq!(first.parsed_files, 1);
         let content_id = inputs[0].content_id.as_deref().unwrap();
         let cache_path = cache.path_for(content_id).unwrap();
         fs::write(cache_path, "broken json").unwrap();
 
-        let second = scan_inputs(&inputs, Some(&cache)).unwrap();
+        let second = scan_inputs(&inputs, Some(&cache), false).unwrap();
         assert_eq!(second.cache_hits, 0);
         assert_eq!(second.parsed_files, 1);
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn repository_prefilter_skips_factless_sources_without_changing_facts() {
+        let root = unique_temp_dir("rust-fact-prefilter");
+        fs::create_dir_all(&root).unwrap();
+        let plain = root.join("plain.rs");
+        let candidate = root.join("candidate.rs");
+        fs::write(&plain, "const VALUE: u8 = 1;\n").unwrap();
+        fs::write(&candidate, "#[cfg(test)]\nmod tests {}\n").unwrap();
+
+        let inputs = vec![
+            RustInput {
+                path: plain,
+                content_id: None,
+            },
+            RustInput {
+                path: candidate,
+                content_id: None,
+            },
+        ];
+        let full = scan_inputs(&inputs, None, false).unwrap();
+        let filtered = scan_inputs(&inputs, None, true).unwrap();
+
+        assert_eq!(filtered.files, full.files);
+        assert_eq!(filtered.parsed_files, 1);
+        assert_eq!(filtered.prefiltered_files, 1);
+        assert_eq!(filtered.cache_hits, 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn prefilter_parses_marker_lookalikes_in_comments_and_strings() {
+        let root = unique_temp_dir("rust-fact-prefilter-lookalikes");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("lookalikes.rs");
+        fs::write(
+            &path,
+            "// mod fake fn fake #[test]\nconst NOTE: &str = \"mod fn #[test]\";\n",
+        )
+        .unwrap();
+
+        let scan = scan_inputs(
+            &[RustInput {
+                path,
+                content_id: None,
+            }],
+            None,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(scan.parsed_files, 1);
+        assert_eq!(scan.prefiltered_files, 0);
+        assert!(scan.files[0].facts.parse_error.is_none());
+        assert!(scan.files[0].facts.test_modules.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn targeted_scan_keeps_malformed_changed_source_unknown() {
+        let root = unique_temp_dir("rust-fact-prefilter-targeted");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("changed.rs");
+        fs::write(&path, "this is deliberately invalid Rust {{{\n").unwrap();
+
+        let scan = scan_rust_paths(std::slice::from_ref(&path)).unwrap();
+
+        assert_eq!(scan.parsed_files, 1);
+        assert_eq!(scan.prefiltered_files, 0);
+        assert!(scan.files[0].facts.parse_error.is_some());
         fs::remove_dir_all(root).unwrap();
     }
 }
