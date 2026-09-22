@@ -13,7 +13,7 @@ use crate::cmux_review::{
 };
 
 pub const CMUX_REVIEW_APPLICABILITY_SCHEMA_VERSION: u32 = 1;
-pub const CMUX_REVIEW_SOURCE_FINGERPRINT_SCHEME: &str = "cmux-review-source-sha256-v1";
+pub const CMUX_REVIEW_SOURCE_FINGERPRINT_SCHEME: &str = "cmux-review-source-tree-sha256-v1";
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -157,15 +157,7 @@ pub fn fingerprint_source(
     hasher.update([0]);
     hasher.update(source.base_sha.as_bytes());
     hasher.update([0]);
-    hasher.update(source.head_sha.as_bytes());
-    hasher.update([0]);
-    hasher.update(source.diff_sha256.as_bytes());
-    hasher.update([0]);
-    hasher.update(if source.working_tree_dirty {
-        b"1"
-    } else {
-        b"0"
-    });
+    hasher.update(source.tree_sha.as_bytes());
 
     let digest = hasher.finalize();
     let mut hex = String::with_capacity(64);
@@ -179,7 +171,11 @@ pub fn fingerprint_source(
 fn validate_source(source: &CmuxReviewSource) -> Result<(), CmuxReviewApplicabilityError> {
     validate_git_object_id(&source.base_sha, "current source base_sha")?;
     validate_git_object_id(&source.head_sha, "current source head_sha")?;
-    validate_sha256(&source.diff_sha256, "current source diff_sha256")
+    validate_git_object_id(&source.tree_sha, "current source tree_sha")?;
+    if let Some(patch) = &source.patch_sha256 {
+        validate_sha256(patch, "current source patch_sha256")?;
+    }
+    Ok(())
 }
 
 fn validate_policy_version(value: &str) -> Result<(), CmuxReviewApplicabilityError> {
