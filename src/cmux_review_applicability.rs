@@ -112,7 +112,8 @@ pub fn project_cmux_review_for_context(
     })
     .map_err(|error| CmuxReviewApplicabilityError::new(error.to_string()))?;
 
-    let policy_version_status = if request.current.policy_version == request.receipt.policy_version {
+    let policy_version_status = if request.current.policy_version == request.receipt.policy_version
+    {
         CmuxReviewCoordinateStatus::Matched
     } else {
         CmuxReviewCoordinateStatus::Mismatched
@@ -160,7 +161,11 @@ pub fn fingerprint_source(
     hasher.update([0]);
     hasher.update(source.diff_sha256.as_bytes());
     hasher.update([0]);
-    hasher.update(if source.working_tree_dirty { b"1" } else { b"0" });
+    hasher.update(if source.working_tree_dirty {
+        b"1"
+    } else {
+        b"0"
+    });
 
     let digest = hasher.finalize();
     let mut hex = String::with_capacity(64);
@@ -193,10 +198,7 @@ fn validate_ruleset(value: Option<&str>) -> Result<(), CmuxReviewApplicabilityEr
     Ok(())
 }
 
-fn validate_git_object_id(
-    value: &str,
-    field: &str,
-) -> Result<(), CmuxReviewApplicabilityError> {
+fn validate_git_object_id(value: &str, field: &str) -> Result<(), CmuxReviewApplicabilityError> {
     if !matches!(value.len(), 40 | 64) || !is_lower_hex(value) {
         return Err(CmuxReviewApplicabilityError::new(format!(
             "{field} must be an exact 40- or 64-character lowercase Git object id"
