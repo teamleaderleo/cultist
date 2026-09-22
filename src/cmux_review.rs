@@ -657,7 +657,8 @@ fn validate_finding(
         }
         if !matches!(
             finding.verification.result,
-            CmuxReviewVerificationResult::Reproduced | CmuxReviewVerificationResult::SupportedStatic
+            CmuxReviewVerificationResult::Reproduced
+                | CmuxReviewVerificationResult::SupportedStatic
         ) {
             return Err(CmuxReviewError::new(format!(
                 "finding {} is disposed repaired without pre-repair evidence support",
