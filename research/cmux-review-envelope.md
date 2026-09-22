@@ -45,8 +45,12 @@ The projector fails closed on several inconsistent states:
 - a refuted final disposition without a refuting challenger;
 - a surviving finding after explicit challenger refutation;
 - reproduced/static-supported verification without at least one `PROVEN` or `DERIVED` claim;
-- a repaired disposition without an attempted fixed repair and replayed verification;
+- a repaired disposition without an attempted fixed repair;
+- a repaired disposition without a distinct exact resulting source;
+- a repaired disposition without passed, evidence-bearing post-repair verification;
 - a human-required disposition with no retained uncertainty or blocked/human verification state.
+
+A repaired finding explicitly carries both states: the top-level receipt source is the pre-repair review coordinate, while `repair.after_source` and `repair.verification` bind the repair result and replay evidence to the resulting coordinate.
 
 These checks are intentionally narrower than a universal review ontology. They test whether the current orchestration receipt preserves enough evidence for Cultist to reason about attention and later applicability.
 
