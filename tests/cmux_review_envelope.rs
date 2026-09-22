@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-#[path = "../src/finding.rs"]
-mod finding;
 #[path = "../src/cmux_review.rs"]
 mod cmux_review;
+#[path = "../src/finding.rs"]
+mod finding;
 
 use cmux_review::*;
 use finding::ClaimKind;
@@ -186,14 +186,8 @@ fn projects_attention_frontier_and_quiet_findings() {
     assert!(envelope.frontier.iter().any(|item| {
         item.finding_id == "AUTH-02" && item.kind == CmuxReviewFrontierKind::HumanRequired
     }));
-    assert_eq!(
-        envelope.attention[0].claims[0].kind,
-        ClaimKind::Inferred
-    );
-    assert_eq!(
-        envelope.attention[0].claims[1].kind,
-        ClaimKind::Proven
-    );
+    assert_eq!(envelope.attention[0].claims[0].kind, ClaimKind::Inferred);
+    assert_eq!(envelope.attention[0].claims[1].kind, ClaimKind::Proven);
 }
 
 #[test]
@@ -216,7 +210,9 @@ fn rejects_repaired_finding_without_replayed_verification() {
 #[test]
 fn rejects_supported_verification_without_proven_or_derived_claim() {
     let mut receipt = sample_receipt();
-    receipt.findings[0].claims.retain(|claim| claim.kind == ClaimKind::Inferred);
+    receipt.findings[0]
+        .claims
+        .retain(|claim| claim.kind == ClaimKind::Inferred);
 
     let error = project_cmux_review_receipt(&receipt).unwrap_err();
     assert!(
