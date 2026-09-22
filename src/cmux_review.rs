@@ -30,8 +30,10 @@ pub struct CmuxReviewReceipt {
 pub struct CmuxReviewSource {
     pub base_sha: String,
     pub head_sha: String,
-    pub diff_sha256: String,
+    pub tree_sha: String,
     pub working_tree_dirty: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
@@ -635,9 +637,9 @@ fn validate_finding(
             ))
         })?;
         validate_source(after_source, "repair.after_source")?;
-        if after_source == source {
+        if after_source.tree_sha == source.tree_sha {
             return Err(CmuxReviewError::new(format!(
-                "finding {} is disposed repaired but the resulting source is unchanged",
+                "finding {} is disposed repaired but the resulting candidate tree is unchanged",
                 finding.id
             )));
         }
@@ -696,7 +698,10 @@ fn validate_finding(
 fn validate_source(source: &CmuxReviewSource, field: &str) -> Result<(), CmuxReviewError> {
     validate_git_object_id(&source.base_sha, &format!("{field}.base_sha"))?;
     validate_git_object_id(&source.head_sha, &format!("{field}.head_sha"))?;
-    validate_sha256(&source.diff_sha256, &format!("{field}.diff_sha256"))?;
+    validate_git_object_id(&source.tree_sha, &format!("{field}.tree_sha"))?;
+    if let Some(patch) = &source.patch_sha256 {
+        validate_sha256(patch, &format!("{field}.patch_sha256"))?;
+    }
     Ok(())
 }
 
