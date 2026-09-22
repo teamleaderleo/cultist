@@ -650,7 +650,10 @@ fn validate_finding(
             )));
         }
         for evidence in &post_verification.evidence {
-            validate_nonempty(&evidence.summary, "post-repair verification evidence summary")?;
+            validate_nonempty(
+                &evidence.summary,
+                "post-repair verification evidence summary",
+            )?;
         }
         if !matches!(
             finding.verification.result,
