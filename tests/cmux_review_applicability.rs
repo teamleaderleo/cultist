@@ -29,8 +29,9 @@ fn receipt() -> CmuxReviewReceipt {
         "source": {
             "base_sha": "1111111111111111111111111111111111111111",
             "head_sha": "2222222222222222222222222222222222222222",
-            "diff_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
-            "working_tree_dirty": true
+            "tree_sha": "3333333333333333333333333333333333333333",
+            "working_tree_dirty": true,
+            "patch_sha256": null
         },
         "brief": {
             "intent": "Review one repairable change",
@@ -88,8 +89,9 @@ fn receipt() -> CmuxReviewReceipt {
                     "after_source": {
                         "base_sha": "1111111111111111111111111111111111111111",
                         "head_sha": "2222222222222222222222222222222222222222",
-                        "diff_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
-                        "working_tree_dirty": true
+                        "tree_sha": "4444444444444444444444444444444444444444",
+                        "working_tree_dirty": true,
+                        "patch_sha256": null
                     },
                     "verification": {
                         "result": "passed",
@@ -154,11 +156,11 @@ fn exact_review_source_and_policy_reuse_review() {
 }
 
 #[test]
-fn same_head_with_different_dirty_patch_requires_refresh() {
+fn same_head_with_different_candidate_tree_requires_refresh() {
     let receipt = receipt();
     let mut changed = receipt.source.clone();
-    changed.diff_sha256 =
-        "9999999999999999999999999999999999999999999999999999999999999999".to_string();
+    changed.tree_sha =
+        "9999999999999999999999999999999999999999".to_string();
 
     let projection = project_cmux_review_for_context(&request(
         receipt,
@@ -274,13 +276,50 @@ fn missing_current_source_stays_unknown() {
 }
 
 #[test]
-fn source_fingerprint_changes_with_dirty_patch_digest() {
+fn source_fingerprint_changes_with_candidate_tree() {
     let receipt = receipt();
     let mut changed = receipt.source.clone();
-    changed.diff_sha256 =
-        "9999999999999999999999999999999999999999999999999999999999999999".to_string();
+    changed.tree_sha =
+        "9999999999999999999999999999999999999999".to_string();
 
     assert_ne!(
+        fingerprint_source(&receipt.source).unwrap(),
+        fingerprint_source(&changed).unwrap()
+    );
+}
+
+#[test]
+fn identity_only_head_change_reuses_review() {
+    let receipt = receipt();
+    let mut changed = receipt.source.clone();
+    changed.head_sha =
+        "8888888888888888888888888888888888888888".to_string();
+
+    assert_eq!(
+        fingerprint_source(&receipt.source).unwrap(),
+        fingerprint_source(&changed).unwrap()
+    );
+
+    let projection = project_cmux_review_for_context(&request(
+        receipt,
+        current(Some(changed), "cmux-review/v1", Some(RULESET_A)),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        projection.disposition,
+        CmuxReviewContinuityDisposition::ReuseExactReview
+    );
+}
+
+#[test]
+fn patch_digest_is_audit_evidence_not_reuse_identity() {
+    let receipt = receipt();
+    let mut changed = receipt.source.clone();
+    changed.patch_sha256 =
+        Some("7777777777777777777777777777777777777777777777777777777777777777".to_string());
+
+    assert_eq!(
         fingerprint_source(&receipt.source).unwrap(),
         fingerprint_source(&changed).unwrap()
     );
