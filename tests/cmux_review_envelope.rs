@@ -16,6 +16,7 @@ fn sample_receipt() -> CmuxReviewReceipt {
         "repository_root": "/repo",
         "ruleset_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
         "source": {
+            "repository_id": "github:owner/repo",
             "base_sha": "1111111111111111111111111111111111111111",
             "head_sha": "2222222222222222222222222222222222222222",
             "tree_sha": "3333333333333333333333333333333333333333",
@@ -98,6 +99,7 @@ fn sample_receipt() -> CmuxReviewReceipt {
                     "attempted": true,
                     "result": "fixed",
                     "after_source": {
+                        "repository_id": "github:owner/repo",
                         "base_sha": "1111111111111111111111111111111111111111",
                         "head_sha": "5555555555555555555555555555555555555555",
                         "tree_sha": "6666666666666666666666666666666666666666",
