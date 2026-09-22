@@ -28,6 +28,7 @@ pub struct CmuxReviewReceipt {
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CmuxReviewSource {
+    pub repository_id: String,
     pub base_sha: String,
     pub head_sha: String,
     pub tree_sha: String,
@@ -637,6 +638,12 @@ fn validate_finding(
             ))
         })?;
         validate_source(after_source, "repair.after_source")?;
+        if after_source.repository_id != source.repository_id {
+            return Err(CmuxReviewError::new(format!(
+                "finding {} repair changes repository identity",
+                finding.id
+            )));
+        }
         if after_source.tree_sha == source.tree_sha {
             return Err(CmuxReviewError::new(format!(
                 "finding {} is disposed repaired but the resulting candidate tree is unchanged",
@@ -696,6 +703,7 @@ fn validate_finding(
 }
 
 fn validate_source(source: &CmuxReviewSource, field: &str) -> Result<(), CmuxReviewError> {
+    validate_nonempty(&source.repository_id, &format!("{field}.repository_id"))?;
     validate_git_object_id(&source.base_sha, &format!("{field}.base_sha"))?;
     validate_git_object_id(&source.head_sha, &format!("{field}.head_sha"))?;
     validate_git_object_id(&source.tree_sha, &format!("{field}.tree_sha"))?;
