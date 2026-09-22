@@ -9,24 +9,28 @@ mod cmux_review_applicability;
 #[path = "../src/finding.rs"]
 mod finding;
 
-use applicability::{ApplicabilityStatus, EvaluationContext};
-use cmux_review::{CmuxReviewReceipt, CmuxReviewRepair};
+use applicability::ApplicabilityStatus;
+use cmux_review::{CmuxReviewReceipt, CmuxReviewSource};
 use cmux_review_applicability::{
-    CmuxReviewApplicabilityRequest, CmuxReviewContinuityDisposition,
-    project_cmux_review_for_context,
+    CmuxReviewApplicabilityRequest, CmuxReviewContinuityDisposition, CmuxReviewCoordinateStatus,
+    CmuxReviewCurrentContext, fingerprint_source, project_cmux_review_for_context,
 };
 use serde_json::json;
+
+const RULESET_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const RULESET_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 fn receipt() -> CmuxReviewReceipt {
     serde_json::from_value(json!({
         "schema_version": 1,
         "policy_version": "cmux-review/v1",
         "repository_root": "/repo",
+        "ruleset_sha256": RULESET_A,
         "source": {
             "base_sha": "1111111111111111111111111111111111111111",
             "head_sha": "2222222222222222222222222222222222222222",
             "diff_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
-            "working_tree_dirty": false
+            "working_tree_dirty": true
         },
         "brief": {
             "intent": "Review one repairable change",
@@ -83,9 +87,9 @@ fn receipt() -> CmuxReviewReceipt {
                     "result": "fixed",
                     "after_source": {
                         "base_sha": "1111111111111111111111111111111111111111",
-                        "head_sha": "4444444444444444444444444444444444444444",
-                        "diff_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
-                        "working_tree_dirty": false
+                        "head_sha": "2222222222222222222222222222222222222222",
+                        "diff_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+                        "working_tree_dirty": true
                     },
                     "verification": {
                         "result": "passed",
@@ -102,24 +106,44 @@ fn receipt() -> CmuxReviewReceipt {
     .unwrap()
 }
 
-fn request(receipt: CmuxReviewReceipt, revision: Option<&str>) -> CmuxReviewApplicabilityRequest {
-    CmuxReviewApplicabilityRequest {
-        receipt,
-        current: EvaluationContext {
-            revision: revision.map(str::to_string),
-            ..EvaluationContext::default()
-        },
+fn current(
+    source: Option<CmuxReviewSource>,
+    policy_version: &str,
+    ruleset_sha256: Option<&str>,
+) -> CmuxReviewCurrentContext {
+    CmuxReviewCurrentContext {
+        source,
+        policy_version: policy_version.to_string(),
+        ruleset_sha256: ruleset_sha256.map(str::to_string),
     }
 }
 
-#[test]
-fn exact_review_head_reuses_review() {
-    let receipt = receipt();
-    let reviewed_head = receipt.source.head_sha.clone();
-    let projection =
-        project_cmux_review_for_context(&request(receipt, Some(&reviewed_head))).unwrap();
+fn request(
+    receipt: CmuxReviewReceipt,
+    current: CmuxReviewCurrentContext,
+) -> CmuxReviewApplicabilityRequest {
+    CmuxReviewApplicabilityRequest { receipt, current }
+}
 
-    assert_eq!(projection.applicability.status, ApplicabilityStatus::Applies);
+#[test]
+fn exact_review_source_and_policy_reuse_review() {
+    let receipt = receipt();
+    let context = current(
+        Some(receipt.source.clone()),
+        &receipt.policy_version,
+        receipt.ruleset_sha256.as_deref(),
+    );
+    let projection = project_cmux_review_for_context(&request(receipt, context)).unwrap();
+
+    assert_eq!(
+        projection.source_applicability.status,
+        ApplicabilityStatus::Applies
+    );
+    assert_eq!(
+        projection.policy_version_status,
+        CmuxReviewCoordinateStatus::Matched
+    );
+    assert_eq!(projection.ruleset_status, CmuxReviewCoordinateStatus::Matched);
     assert_eq!(
         projection.disposition,
         CmuxReviewContinuityDisposition::ReuseExactReview
@@ -127,19 +151,22 @@ fn exact_review_head_reuses_review() {
 }
 
 #[test]
-fn repaired_source_requires_a_fresh_review() {
+fn same_head_with_different_dirty_patch_requires_refresh() {
     let receipt = receipt();
-    let repaired_head = receipt.findings[0]
-        .repair
-        .as_ref()
-        .and_then(|repair: &CmuxReviewRepair| repair.after_source.as_ref())
-        .unwrap()
-        .head_sha
-        .clone();
-    let projection =
-        project_cmux_review_for_context(&request(receipt, Some(&repaired_head))).unwrap();
+    let mut changed = receipt.source.clone();
+    changed.diff_sha256 =
+        "9999999999999999999999999999999999999999999999999999999999999999".to_string();
 
-    assert_eq!(projection.applicability.status, ApplicabilityStatus::Invalid);
+    let projection = project_cmux_review_for_context(&request(
+        receipt,
+        current(Some(changed), "cmux-review/v1", Some(RULESET_A)),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        projection.source_applicability.status,
+        ApplicabilityStatus::Invalid
+    );
     assert_eq!(
         projection.disposition,
         CmuxReviewContinuityDisposition::RefreshReview
@@ -147,24 +174,115 @@ fn repaired_source_requires_a_fresh_review() {
 }
 
 #[test]
-fn missing_current_revision_stays_unknown() {
-    let projection = project_cmux_review_for_context(&request(receipt(), None)).unwrap();
+fn repaired_source_requires_a_fresh_review() {
+    let receipt = receipt();
+    let repaired_source = receipt.findings[0]
+        .repair
+        .as_ref()
+        .and_then(|repair| repair.after_source.clone())
+        .unwrap();
 
-    assert_eq!(projection.applicability.status, ApplicabilityStatus::Unknown);
+    let projection = project_cmux_review_for_context(&request(
+        receipt,
+        current(
+            Some(repaired_source),
+            "cmux-review/v1",
+            Some(RULESET_A),
+        ),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        projection.source_applicability.status,
+        ApplicabilityStatus::Invalid
+    );
     assert_eq!(
         projection.disposition,
-        CmuxReviewContinuityDisposition::NeedCurrentRevision
+        CmuxReviewContinuityDisposition::RefreshReview
     );
 }
 
 #[test]
-fn abbreviated_current_revision_is_rejected() {
-    let error =
-        project_cmux_review_for_context(&request(receipt(), Some("deadbee"))).unwrap_err();
+fn policy_version_change_requires_refresh() {
+    let receipt = receipt();
+    let projection = project_cmux_review_for_context(&request(
+        receipt.clone(),
+        current(
+            Some(receipt.source.clone()),
+            "cmux-review/v2",
+            Some(RULESET_A),
+        ),
+    ))
+    .unwrap();
 
-    assert!(
-        error
-            .to_string()
-            .contains("current revision must be an exact 40- or 64-character")
+    assert_eq!(
+        projection.source_applicability.status,
+        ApplicabilityStatus::Applies
+    );
+    assert_eq!(
+        projection.policy_version_status,
+        CmuxReviewCoordinateStatus::Mismatched
+    );
+    assert_eq!(
+        projection.disposition,
+        CmuxReviewContinuityDisposition::RefreshReview
+    );
+}
+
+#[test]
+fn ruleset_change_requires_refresh() {
+    let receipt = receipt();
+    let projection = project_cmux_review_for_context(&request(
+        receipt.clone(),
+        current(
+            Some(receipt.source.clone()),
+            &receipt.policy_version,
+            Some(RULESET_B),
+        ),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        projection.source_applicability.status,
+        ApplicabilityStatus::Applies
+    );
+    assert_eq!(
+        projection.ruleset_status,
+        CmuxReviewCoordinateStatus::Mismatched
+    );
+    assert_eq!(
+        projection.disposition,
+        CmuxReviewContinuityDisposition::RefreshReview
+    );
+}
+
+#[test]
+fn missing_current_source_stays_unknown() {
+    let projection = project_cmux_review_for_context(&request(
+        receipt(),
+        current(None, "cmux-review/v1", Some(RULESET_A)),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        projection.source_applicability.status,
+        ApplicabilityStatus::Unknown
+    );
+    assert_eq!(
+        projection.disposition,
+        CmuxReviewContinuityDisposition::NeedCurrentSource
+    );
+}
+
+#[test]
+fn source_fingerprint_changes_with_dirty_patch_digest() {
+    let receipt = receipt();
+    let mut changed = receipt.source.clone();
+    changed.diff_sha256 =
+        "9999999999999999999999999999999999999999999999999999999999999999".to_string();
+
+    assert_ne!(
+        fingerprint_source(&receipt.source).unwrap(),
+        fingerprint_source(&changed).unwrap()
     );
 }
