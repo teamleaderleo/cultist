@@ -11,6 +11,7 @@ The first answer uses separate applicability axes.
 The reviewed source reuse coordinate is fingerprinted from:
 
 ```text
+repository_id
 base_sha
 tree_sha
 ```
@@ -19,7 +20,7 @@ The fingerprint is carried through Cultist's existing exact-revision applicabili
 
 `tree_sha` is the canonical candidate-content snapshot. `head_sha` stays available as lineage evidence, `working_tree_dirty` remains useful presentation/provenance state, and optional `patch_sha256` can bind retained rendered patch bytes. Those fields do not force a fresh review when base + candidate tree are byte-identical.
 
-This prevents a same-HEAD dirty-tree false reuse while also avoiding a redundant review after an identity-only amend/rebase that preserves the exact base and candidate tree.
+Repository identity keeps content-addressed Git objects scoped to the project they came from. This prevents cross-repository reuse as well as a same-HEAD dirty-tree false reuse while also avoiding a redundant review after an identity-only amend/rebase that preserves the exact base and candidate tree.
 
 ### Review policy identity
 
@@ -38,7 +39,7 @@ A code-identical candidate reviewed under changed policy/rules requires refresh 
 exact source + policy + ruleset
   -> reuse_exact_review
 
-base/tree source mismatch or policy/ruleset mismatch
+repository/base/tree source mismatch or policy/ruleset mismatch
   -> refresh_review
 
 current source unavailable
@@ -65,6 +66,7 @@ The request carries the historical receipt plus the current source and current r
 
 Controls require:
 
+- different repository identity -> refresh;
 - same HEAD + different candidate tree -> refresh;
 - different HEAD + same base/tree -> reuse;
 - different patch digest + same base/tree -> reuse of the semantic review disposition;
