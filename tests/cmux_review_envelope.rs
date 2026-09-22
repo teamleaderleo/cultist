@@ -95,8 +95,23 @@ fn sample_receipt() -> CmuxReviewReceipt {
                 },
                 "repair": {
                     "attempted": true,
-                    "verification_replayed": true,
                     "result": "fixed",
+                    "after_source": {
+                        "base_sha": "1111111111111111111111111111111111111111",
+                        "head_sha": "5555555555555555555555555555555555555555",
+                        "diff_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+                        "working_tree_dirty": false,
+                        "ruleset_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+                    },
+                    "verification": {
+                        "result": "passed",
+                        "evidence": [
+                            {
+                                "kind": "test",
+                                "summary": "the original discriminator passes after repair"
+                            }
+                        ]
+                    },
                     "notes": "serialized ownership transition"
                 },
                 "disposition": "repaired"
@@ -188,22 +203,39 @@ fn projects_attention_frontier_and_quiet_findings() {
     }));
     assert_eq!(envelope.attention[0].claims[0].kind, ClaimKind::Inferred);
     assert_eq!(envelope.attention[0].claims[1].kind, ClaimKind::Proven);
+    assert_eq!(
+        envelope.attention[0]
+            .repair
+            .as_ref()
+            .and_then(|repair| repair.after_source.as_ref())
+            .map(|source| source.head_sha.as_str()),
+        Some("5555555555555555555555555555555555555555")
+    );
 }
 
 #[test]
-fn rejects_repaired_finding_without_replayed_verification() {
+fn rejects_repaired_finding_without_post_repair_verification() {
     let mut receipt = sample_receipt();
-    receipt.findings[0]
-        .repair
-        .as_mut()
-        .unwrap()
-        .verification_replayed = false;
+    receipt.findings[0].repair.as_mut().unwrap().verification = None;
 
     let error = project_cmux_review_receipt(&receipt).unwrap_err();
     assert!(
         error
             .to_string()
-            .contains("without an attempted, fixed repair and replayed verification")
+            .contains("without post-repair verification")
+    );
+}
+
+#[test]
+fn rejects_repaired_finding_with_unchanged_resulting_source() {
+    let mut receipt = sample_receipt();
+    receipt.findings[0].repair.as_mut().unwrap().after_source = Some(receipt.source.clone());
+
+    let error = project_cmux_review_receipt(&receipt).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("resulting source is unchanged")
     );
 }
 
