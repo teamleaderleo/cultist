@@ -232,11 +232,7 @@ fn rejects_repaired_finding_with_unchanged_resulting_source() {
     receipt.findings[0].repair.as_mut().unwrap().after_source = Some(receipt.source.clone());
 
     let error = project_cmux_review_receipt(&receipt).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("resulting source is unchanged")
-    );
+    assert!(error.to_string().contains("resulting source is unchanged"));
 }
 
 #[test]
