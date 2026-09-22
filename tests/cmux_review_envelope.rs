@@ -18,8 +18,9 @@ fn sample_receipt() -> CmuxReviewReceipt {
         "source": {
             "base_sha": "1111111111111111111111111111111111111111",
             "head_sha": "2222222222222222222222222222222222222222",
-            "diff_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
-            "working_tree_dirty": false
+            "tree_sha": "3333333333333333333333333333333333333333",
+            "working_tree_dirty": false,
+            "patch_sha256": null
         },
         "brief": {
             "intent": "Fix reconnect behavior",
@@ -99,8 +100,9 @@ fn sample_receipt() -> CmuxReviewReceipt {
                     "after_source": {
                         "base_sha": "1111111111111111111111111111111111111111",
                         "head_sha": "5555555555555555555555555555555555555555",
-                        "diff_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
-                        "working_tree_dirty": false
+                        "tree_sha": "6666666666666666666666666666666666666666",
+                        "working_tree_dirty": false,
+                        "patch_sha256": null
                     },
                     "verification": {
                         "result": "passed",
