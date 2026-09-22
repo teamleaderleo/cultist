@@ -14,12 +14,12 @@ fn sample_receipt() -> CmuxReviewReceipt {
         "schema_version": 1,
         "policy_version": "cmux-review/v1",
         "repository_root": "/repo",
+        "ruleset_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
         "source": {
             "base_sha": "1111111111111111111111111111111111111111",
             "head_sha": "2222222222222222222222222222222222222222",
             "diff_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
-            "working_tree_dirty": false,
-            "ruleset_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+            "working_tree_dirty": false
         },
         "brief": {
             "intent": "Fix reconnect behavior",
@@ -100,8 +100,7 @@ fn sample_receipt() -> CmuxReviewReceipt {
                         "base_sha": "1111111111111111111111111111111111111111",
                         "head_sha": "5555555555555555555555555555555555555555",
                         "diff_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
-                        "working_tree_dirty": false,
-                        "ruleset_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+                        "working_tree_dirty": false
                     },
                     "verification": {
                         "result": "passed",
