@@ -16,6 +16,8 @@ pub struct CmuxReviewReceipt {
     pub schema_version: u32,
     pub policy_version: String,
     pub repository_root: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruleset_sha256: Option<String>,
     pub source: CmuxReviewSource,
     pub brief: CmuxReviewBrief,
     pub summary: CmuxReviewSummary,
@@ -30,8 +32,6 @@ pub struct CmuxReviewSource {
     pub head_sha: String,
     pub diff_sha256: String,
     pub working_tree_dirty: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ruleset_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
@@ -245,6 +245,8 @@ pub enum CmuxReviewDisposition {
 pub struct CmuxReviewEnvelope {
     pub schema_version: u32,
     pub policy_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ruleset_sha256: Option<String>,
     pub source: CmuxReviewSource,
     pub created_at: String,
     pub intent: String,
@@ -451,6 +453,7 @@ pub fn project_cmux_review_receipt(
     Ok(CmuxReviewEnvelope {
         schema_version: CMUX_REVIEW_ENVELOPE_SCHEMA_VERSION,
         policy_version: receipt.policy_version.clone(),
+        ruleset_sha256: receipt.ruleset_sha256.clone(),
         source: receipt.source.clone(),
         created_at: receipt.created_at.clone(),
         intent: receipt.brief.intent.clone(),
@@ -473,6 +476,9 @@ fn validate_receipt(receipt: &CmuxReviewReceipt) -> Result<(), CmuxReviewError> 
     validate_nonempty(&receipt.policy_version, "policy_version")?;
     validate_nonempty(&receipt.repository_root, "repository_root")?;
     validate_nonempty(&receipt.created_at, "created_at")?;
+    if let Some(ruleset) = &receipt.ruleset_sha256 {
+        validate_sha256(ruleset, "ruleset_sha256")?;
+    }
     validate_source(&receipt.source, "source")?;
 
     if receipt.summary.hypotheses_investigated < receipt.findings.len() {
@@ -691,9 +697,6 @@ fn validate_source(source: &CmuxReviewSource, field: &str) -> Result<(), CmuxRev
     validate_git_object_id(&source.base_sha, &format!("{field}.base_sha"))?;
     validate_git_object_id(&source.head_sha, &format!("{field}.head_sha"))?;
     validate_sha256(&source.diff_sha256, &format!("{field}.diff_sha256"))?;
-    if let Some(ruleset) = &source.ruleset_sha256 {
-        validate_sha256(ruleset, &format!("{field}.ruleset_sha256"))?;
-    }
     Ok(())
 }
 
