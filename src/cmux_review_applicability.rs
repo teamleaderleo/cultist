@@ -155,6 +155,8 @@ pub fn fingerprint_source(
     let mut hasher = Sha256::new();
     hasher.update(CMUX_REVIEW_SOURCE_FINGERPRINT_SCHEME.as_bytes());
     hasher.update([0]);
+    hasher.update(source.repository_id.as_bytes());
+    hasher.update([0]);
     hasher.update(source.base_sha.as_bytes());
     hasher.update([0]);
     hasher.update(source.tree_sha.as_bytes());
@@ -169,11 +171,24 @@ pub fn fingerprint_source(
 }
 
 fn validate_source(source: &CmuxReviewSource) -> Result<(), CmuxReviewApplicabilityError> {
+    validate_coordinate(&source.repository_id, "current source repository_id")?;
     validate_git_object_id(&source.base_sha, "current source base_sha")?;
     validate_git_object_id(&source.head_sha, "current source head_sha")?;
     validate_git_object_id(&source.tree_sha, "current source tree_sha")?;
     if let Some(patch) = &source.patch_sha256 {
         validate_sha256(patch, "current source patch_sha256")?;
+    }
+    Ok(())
+}
+
+fn validate_coordinate(
+    value: &str,
+    field: &str,
+) -> Result<(), CmuxReviewApplicabilityError> {
+    if value.is_empty() || value.trim() != value || value.len() > 1024 || value.contains('\0') {
+        return Err(CmuxReviewApplicabilityError::new(format!(
+            "{field} must be a bounded non-empty canonical string"
+        )));
     }
     Ok(())
 }
