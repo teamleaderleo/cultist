@@ -143,7 +143,10 @@ fn exact_review_source_and_policy_reuse_review() {
         projection.policy_version_status,
         CmuxReviewCoordinateStatus::Matched
     );
-    assert_eq!(projection.ruleset_status, CmuxReviewCoordinateStatus::Matched);
+    assert_eq!(
+        projection.ruleset_status,
+        CmuxReviewCoordinateStatus::Matched
+    );
     assert_eq!(
         projection.disposition,
         CmuxReviewContinuityDisposition::ReuseExactReview
@@ -184,11 +187,7 @@ fn repaired_source_requires_a_fresh_review() {
 
     let projection = project_cmux_review_for_context(&request(
         receipt,
-        current(
-            Some(repaired_source),
-            "cmux-review/v1",
-            Some(RULESET_A),
-        ),
+        current(Some(repaired_source), "cmux-review/v1", Some(RULESET_A)),
     ))
     .unwrap();
 
