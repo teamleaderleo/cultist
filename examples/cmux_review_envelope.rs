@@ -3,10 +3,10 @@
 use std::error::Error;
 use std::io::{self, Read};
 
-#[path = "../src/finding.rs"]
-mod finding;
 #[path = "../src/cmux_review.rs"]
 mod cmux_review;
+#[path = "../src/finding.rs"]
+mod finding;
 
 use cmux_review::{
     MAX_CMUX_REVIEW_RECEIPT_BYTES, parse_cmux_review_receipt, project_cmux_review_receipt,
