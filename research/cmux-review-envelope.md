@@ -29,6 +29,7 @@ cargo run --example cmux_review_envelope < receipt.json
 The output keeps:
 
 - exact base/head and diff identity;
+- separate review protocol/ruleset identity;
 - task intent and requirement status;
 - non-refuted/non-suppressed findings for attention;
 - provenance-bearing claims and verification state;
@@ -49,6 +50,8 @@ The projector fails closed on several inconsistent states:
 - a repaired disposition without a distinct exact resulting source;
 - a repaired disposition without passed, evidence-bearing post-repair verification;
 - a human-required disposition with no retained uncertainty or blocked/human verification state.
+
+Source applicability and review-policy applicability remain separate. The source object contains only code-state identity; `policy_version` and top-level `ruleset_sha256` describe the review process/rules that produced the receipt.
 
 A repaired finding explicitly carries both states: the top-level receipt source is the pre-repair review coordinate, while `repair.after_source` and `repair.verification` bind the repair result and replay evidence to the resulting coordinate.
 
