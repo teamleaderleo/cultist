@@ -242,7 +242,11 @@ fn rejects_repair_that_changes_repository_identity() {
         .repository_id = "github:other/repo".to_string();
 
     let error = project_cmux_review_receipt(&receipt).unwrap_err();
-    assert!(error.to_string().contains("repair changes repository identity"));
+    assert!(
+        error
+            .to_string()
+            .contains("repair changes repository identity")
+    );
 }
 
 #[test]
