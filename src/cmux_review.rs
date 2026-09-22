@@ -195,10 +195,28 @@ pub enum CmuxReviewVerificationResult {
 #[serde(deny_unknown_fields)]
 pub struct CmuxReviewRepair {
     pub attempted: bool,
-    pub verification_replayed: bool,
     pub result: CmuxReviewRepairResult,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_source: Option<CmuxReviewSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification: Option<CmuxReviewPostRepairVerification>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CmuxReviewPostRepairVerification {
+    pub result: CmuxReviewPostRepairVerificationResult,
+    pub evidence: Vec<CmuxReviewEvidence>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CmuxReviewPostRepairVerificationResult {
+    Passed,
+    Failed,
+    Blocked,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize)]
@@ -257,7 +275,7 @@ pub struct CmuxReviewAttentionItem {
     pub challenge: CmuxReviewChallengeDisposition,
     pub verification: CmuxReviewVerificationResult,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub repair: Option<CmuxReviewRepairResult>,
+    pub repair: Option<CmuxReviewRepair>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
@@ -371,7 +389,7 @@ pub fn project_cmux_review_receipt(
             claims: finding.claims.clone(),
             challenge: finding.challenge.disposition,
             verification: finding.verification.result,
-            repair: finding.repair.as_ref().map(|repair| repair.result),
+            repair: finding.repair.clone(),
         });
 
         for claim in &finding.claims {
@@ -455,12 +473,7 @@ fn validate_receipt(receipt: &CmuxReviewReceipt) -> Result<(), CmuxReviewError> 
     validate_nonempty(&receipt.policy_version, "policy_version")?;
     validate_nonempty(&receipt.repository_root, "repository_root")?;
     validate_nonempty(&receipt.created_at, "created_at")?;
-    validate_git_object_id(&receipt.source.base_sha, "source.base_sha")?;
-    validate_git_object_id(&receipt.source.head_sha, "source.head_sha")?;
-    validate_sha256(&receipt.source.diff_sha256, "source.diff_sha256")?;
-    if let Some(ruleset) = &receipt.source.ruleset_sha256 {
-        validate_sha256(ruleset, "source.ruleset_sha256")?;
-    }
+    validate_source(&receipt.source, "source")?;
 
     if receipt.summary.hypotheses_investigated < receipt.findings.len() {
         return Err(CmuxReviewError::new(
@@ -524,7 +537,7 @@ fn validate_receipt(receipt: &CmuxReviewReceipt) -> Result<(), CmuxReviewError> 
 
     let mut finding_ids = BTreeSet::new();
     for finding in &receipt.findings {
-        validate_finding(finding)?;
+        validate_finding(finding, &receipt.source)?;
         if !finding_ids.insert(finding.id.as_str()) {
             return Err(CmuxReviewError::new(format!(
                 "duplicate finding id {}",
@@ -536,7 +549,10 @@ fn validate_receipt(receipt: &CmuxReviewReceipt) -> Result<(), CmuxReviewError> 
     Ok(())
 }
 
-fn validate_finding(finding: &CmuxReviewFinding) -> Result<(), CmuxReviewError> {
+fn validate_finding(
+    finding: &CmuxReviewFinding,
+    source: &CmuxReviewSource,
+) -> Result<(), CmuxReviewError> {
     validate_nonempty(&finding.id, "finding.id")?;
     validate_nonempty(&finding.title, "finding.title")?;
     validate_nonempty(&finding.failure_mode, "finding.failure_mode")?;
@@ -600,19 +616,45 @@ fn validate_finding(finding: &CmuxReviewFinding) -> Result<(), CmuxReviewError> 
                 finding.id
             ))
         })?;
-        if !repair.attempted
-            || !repair.verification_replayed
-            || repair.result != CmuxReviewRepairResult::Fixed
-        {
+        if !repair.attempted || repair.result != CmuxReviewRepairResult::Fixed {
             return Err(CmuxReviewError::new(format!(
-                "finding {} is disposed repaired without an attempted, fixed repair and replayed verification",
+                "finding {} is disposed repaired without an attempted fixed repair",
                 finding.id
             )));
         }
+        let after_source = repair.after_source.as_ref().ok_or_else(|| {
+            CmuxReviewError::new(format!(
+                "finding {} is disposed repaired without an exact resulting source",
+                finding.id
+            ))
+        })?;
+        validate_source(after_source, "repair.after_source")?;
+        if after_source == source {
+            return Err(CmuxReviewError::new(format!(
+                "finding {} is disposed repaired but the resulting source is unchanged",
+                finding.id
+            )));
+        }
+        let post_verification = repair.verification.as_ref().ok_or_else(|| {
+            CmuxReviewError::new(format!(
+                "finding {} is disposed repaired without post-repair verification",
+                finding.id
+            ))
+        })?;
+        if post_verification.result != CmuxReviewPostRepairVerificationResult::Passed
+            || post_verification.evidence.is_empty()
+        {
+            return Err(CmuxReviewError::new(format!(
+                "finding {} is disposed repaired without passed, evidence-bearing post-repair verification",
+                finding.id
+            )));
+        }
+        for evidence in &post_verification.evidence {
+            validate_nonempty(&evidence.summary, "post-repair verification evidence summary")?;
+        }
         if !matches!(
             finding.verification.result,
-            CmuxReviewVerificationResult::Reproduced
-                | CmuxReviewVerificationResult::SupportedStatic
+            CmuxReviewVerificationResult::Reproduced | CmuxReviewVerificationResult::SupportedStatic
         ) {
             return Err(CmuxReviewError::new(format!(
                 "finding {} is disposed repaired without pre-repair evidence support",
@@ -638,6 +680,16 @@ fn validate_finding(finding: &CmuxReviewFinding) -> Result<(), CmuxReviewError> 
         )));
     }
 
+    Ok(())
+}
+
+fn validate_source(source: &CmuxReviewSource, field: &str) -> Result<(), CmuxReviewError> {
+    validate_git_object_id(&source.base_sha, &format!("{field}.base_sha"))?;
+    validate_git_object_id(&source.head_sha, &format!("{field}.head_sha"))?;
+    validate_sha256(&source.diff_sha256, &format!("{field}.diff_sha256"))?;
+    if let Some(ruleset) = &source.ruleset_sha256 {
+        validate_sha256(ruleset, &format!("{field}.ruleset_sha256"))?;
+    }
     Ok(())
 }
 
