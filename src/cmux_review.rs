@@ -581,8 +581,7 @@ fn validate_finding(finding: &CmuxReviewFinding) -> Result<(), CmuxReviewError> 
 
     if matches!(
         finding.verification.result,
-        CmuxReviewVerificationResult::Reproduced
-            | CmuxReviewVerificationResult::SupportedStatic
+        CmuxReviewVerificationResult::Reproduced | CmuxReviewVerificationResult::SupportedStatic
     ) && !finding
         .claims
         .iter()
@@ -623,12 +622,14 @@ fn validate_finding(finding: &CmuxReviewFinding) -> Result<(), CmuxReviewError> 
     }
 
     if finding.disposition == CmuxReviewDisposition::HumanRequired
-        && !finding.claims.iter().any(|claim| claim.kind == ClaimKind::Unknown)
+        && !finding
+            .claims
+            .iter()
+            .any(|claim| claim.kind == ClaimKind::Unknown)
         && finding.challenge.disposition != CmuxReviewChallengeDisposition::Uncertain
         && !matches!(
             finding.verification.result,
-            CmuxReviewVerificationResult::Blocked
-                | CmuxReviewVerificationResult::HumanJudgment
+            CmuxReviewVerificationResult::Blocked | CmuxReviewVerificationResult::HumanJudgment
         )
     {
         return Err(CmuxReviewError::new(format!(
