@@ -27,6 +27,7 @@ fn receipt() -> CmuxReviewReceipt {
         "repository_root": "/repo",
         "ruleset_sha256": RULESET_A,
         "source": {
+            "repository_id": "github:owner/repo",
             "base_sha": "1111111111111111111111111111111111111111",
             "head_sha": "2222222222222222222222222222222222222222",
             "tree_sha": "3333333333333333333333333333333333333333",
@@ -87,6 +88,7 @@ fn receipt() -> CmuxReviewReceipt {
                     "attempted": true,
                     "result": "fixed",
                     "after_source": {
+                        "repository_id": "github:owner/repo",
                         "base_sha": "1111111111111111111111111111111111111111",
                         "head_sha": "2222222222222222222222222222222222222222",
                         "tree_sha": "4444444444444444444444444444444444444444",
@@ -272,6 +274,18 @@ fn missing_current_source_stays_unknown() {
     assert_eq!(
         projection.disposition,
         CmuxReviewContinuityDisposition::NeedCurrentSource
+    );
+}
+
+#[test]
+fn source_fingerprint_changes_with_repository_identity() {
+    let receipt = receipt();
+    let mut changed = receipt.source.clone();
+    changed.repository_id = "github:other/repo".to_string();
+
+    assert_ne!(
+        fingerprint_source(&receipt.source).unwrap(),
+        fingerprint_source(&changed).unwrap()
     );
 }
 
