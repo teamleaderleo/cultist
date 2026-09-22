@@ -13,9 +13,7 @@ mod cmux_review_applicability;
 mod finding;
 
 use cmux_review::MAX_CMUX_REVIEW_RECEIPT_BYTES;
-use cmux_review_applicability::{
-    CmuxReviewApplicabilityRequest, project_cmux_review_for_context,
-};
+use cmux_review_applicability::{CmuxReviewApplicabilityRequest, project_cmux_review_for_context};
 
 fn main() {
     if let Err(error) = run() {
