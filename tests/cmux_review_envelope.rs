@@ -230,6 +230,22 @@ fn rejects_repaired_finding_without_post_repair_verification() {
 }
 
 #[test]
+fn rejects_repair_that_changes_repository_identity() {
+    let mut receipt = sample_receipt();
+    receipt.findings[0]
+        .repair
+        .as_mut()
+        .unwrap()
+        .after_source
+        .as_mut()
+        .unwrap()
+        .repository_id = "github:other/repo".to_string();
+
+    let error = project_cmux_review_receipt(&receipt).unwrap_err();
+    assert!(error.to_string().contains("repair changes repository identity"));
+}
+
+#[test]
 fn rejects_repaired_finding_with_unchanged_resulting_source() {
     let mut receipt = sample_receipt();
     receipt.findings[0].repair.as_mut().unwrap().after_source = Some(receipt.source.clone());
