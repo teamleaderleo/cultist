@@ -8,18 +8,18 @@ The first answer uses separate applicability axes.
 
 ### Source identity
 
-The reviewed source is fingerprinted from:
+The reviewed source reuse coordinate is fingerprinted from:
 
 ```text
 base_sha
-head_sha
-diff_sha256
-working_tree_dirty
+tree_sha
 ```
 
 The fingerprint is carried through Cultist's existing exact-revision applicability evaluator.
 
-This prevents a same-HEAD dirty-tree false reuse: two working trees with the same Git HEAD but different patch digests produce different review-source fingerprints.
+`tree_sha` is the canonical candidate-content snapshot. `head_sha` stays available as lineage evidence, `working_tree_dirty` remains useful presentation/provenance state, and optional `patch_sha256` can bind retained rendered patch bytes. Those fields do not force a fresh review when base + candidate tree are byte-identical.
+
+This prevents a same-HEAD dirty-tree false reuse while also avoiding a redundant review after an identity-only amend/rebase that preserves the exact base and candidate tree.
 
 ### Review policy identity
 
@@ -38,7 +38,7 @@ A code-identical candidate reviewed under changed policy/rules requires refresh 
 exact source + policy + ruleset
   -> reuse_exact_review
 
-source/policy/ruleset mismatch
+base/tree source mismatch or policy/ruleset mismatch
   -> refresh_review
 
 current source unavailable
@@ -62,6 +62,13 @@ cargo run --example cmux_review_applicability < request.json
 ```
 
 The request carries the historical receipt plus the current source and current review-policy identity.
+
+Controls require:
+
+- same HEAD + different candidate tree -> refresh;
+- different HEAD + same base/tree -> reuse;
+- different patch digest + same base/tree -> reuse of the semantic review disposition;
+- policy/ruleset drift -> refresh.
 
 ## Next discriminator
 
